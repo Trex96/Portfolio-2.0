@@ -30,17 +30,34 @@ export function GLBackground() {
     // --- 2. Main Background Setup ---
     const bgMaterialRef = useRef<any>(null);
 
-    // --- 3. Animation Loop ---
+    // --- 3. Mouse Tracking for Pace and Velocity ---
+    const prevMouse = useRef(new THREE.Vector2());
+    const mouseVelocity = useRef(new THREE.Vector2());
+    const mousePace = useRef(0);
+
+    // --- 4. Animation Loop ---
     useFrame((state) => {
         const time = state.clock.elapsedTime;
         const reveal = (window as any).landoGL?.reveal ?? 0;
+        const pointer = state.pointer; // Normalized [-1, 1]
+
+        // Calculate mouse velocity and pace (speed)
+        mouseVelocity.current.subVectors(pointer, prevMouse.current);
+        const dist = mouseVelocity.current.length();
+        const targetPace = Math.min(dist * 50, 1.0); // Scale up distance for pace
+        mousePace.current += (targetPace - mousePace.current) * 0.1; // Smooth it
+        prevMouse.current.copy(pointer);
 
         // A. Render Noise to FBO
         if (noiseMaterialRef.current) {
             noiseMaterialRef.current.uTime = time;
             noiseMaterialRef.current.uReveal = reveal;
             noiseMaterialRef.current.uAspect = size.width / size.height;
-            // Update other noise uniforms if needed (mouse, pace, etc.)
+
+            // Pass mouse coordinates (normalized -1 to 1)
+            noiseMaterialRef.current.uMouseCoords.set(pointer.x, pointer.y);
+            noiseMaterialRef.current.uMousePace = mousePace.current;
+            noiseMaterialRef.current.uMouseVelocity.copy(mouseVelocity.current);
 
             // Resize target if needed
             if (noiseTarget.width !== size.width || noiseTarget.height !== size.height) {

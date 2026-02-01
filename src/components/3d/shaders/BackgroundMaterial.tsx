@@ -1,7 +1,7 @@
 
 import { shaderMaterial } from '@react-three/drei'
 import * as THREE from 'three'
-import { extend, Object3DNode } from '@react-three/fiber'
+import { extend, ThreeElement } from '@react-three/fiber'
 
 /**
  * Background Material Bundle
@@ -145,6 +145,6 @@ extend({ BackgroundMaterial })
 
 declare module '@react-three/fiber' {
   interface ThreeElements {
-    backgroundMaterial: Object3DNode<THREE.ShaderMaterial, typeof BackgroundMaterial>
+    backgroundMaterial: ThreeElement<typeof BackgroundMaterial>
   }
 }

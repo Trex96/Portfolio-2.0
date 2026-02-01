@@ -1,12 +1,13 @@
 import { shaderMaterial } from '@react-three/drei'
 import * as THREE from 'three'
-import { extend, Object3DNode } from '@react-three/fiber'
+import { extend, ThreeElement } from '@react-three/fiber'
 
 const SimplexNoiseMaterial = shaderMaterial(
   {
     uTime: 0,
     uAspect: 1,
     uMouseCoords: new THREE.Vector2(0, 0),
+    uMouseVelocity: new THREE.Vector2(0, 0),
     uMousePace: 0,
     uReveal: 0,
     SCALE: 1.0,
@@ -14,8 +15,8 @@ const SimplexNoiseMaterial = shaderMaterial(
     DISTORT_SCALE: 1.0,
     DISTORT_INTENSITY: 0.5,
     NOISE_DETAIL: 3.0,
-    CURSOR_INTENSITY: 0.15,
-    CURSOR_SCALE: 3.0,
+    CURSOR_INTENSITY: 0.2,
+    CURSOR_SCALE: 2.2,
     CURSOR_BOUNCE: -0.75,
     REVEAL_SIZE: 25.0,
   },
@@ -34,6 +35,7 @@ const SimplexNoiseMaterial = shaderMaterial(
     uniform float uAspect;
     uniform float uTime;
     uniform float uMousePace;
+    uniform vec2 uMouseVelocity;
     uniform float uReveal;
     uniform vec2 uMouseCoords;
 
@@ -136,17 +138,33 @@ const SimplexNoiseMaterial = shaderMaterial(
       /* 
         Noise
       */
-      float noiseDistort = 0.5 + snoise(vec3(uv.x * DISTORT_SCALE, uv.y * DISTORT_SCALE, uTime * SPEED * 0.1)) * 0.5;
+      float velLen = length(uMouseVelocity);
+      vec2 velDir = velLen > 0.0001 ? normalize(uMouseVelocity) : vec2(0.0);
+      
+      // Aerodynamic stretching: Distort UVs along velocity direction
+      vec2 aerodynamicUV = uv;
+      if (velLen > 0.0) {
+        float stretch = dot(uv - mouse, velDir);
+        aerodynamicUV -= velDir * stretch * velLen * 15.0; // The "tail" effect
+      }
+
+      float noiseDistort = 0.5 + snoise(vec3(aerodynamicUV.x * DISTORT_SCALE, aerodynamicUV.y * DISTORT_SCALE, uTime * SPEED * 0.1)) * 0.5;
     
-      // REMOVED cursor influence on coordinates here
+      // Re-enabled cursor influence on coordinates here for "warping" effect
+      float cursorFactor = cursor * CURSOR_INTENSITY;
+      
+      // Sharpening: increase scale and detail based on speed
+      float dynamicScale = SCALE * (1.0 + velLen * 10.0);
+      float dynamicDetail = NOISE_DETAIL * (1.0 + velLen * 5.0);
+
       float noiseFinal = 0.5 + snoise(
         vec3(
-          (uv.x + (noiseDistort * DISTORT_INTENSITY)) * SCALE, 
-          (uv.y + (noiseDistort * DISTORT_INTENSITY)) * SCALE, 
+          (aerodynamicUV.x + (noiseDistort * DISTORT_INTENSITY) + cursorFactor) * dynamicScale, 
+          (aerodynamicUV.y + (noiseDistort * DISTORT_INTENSITY) + cursorFactor) * dynamicScale, 
           uTime * SPEED
         )
       ) * 0.5;
-      noiseFinal *= NOISE_DETAIL;
+      noiseFinal *= dynamicDetail;
       noiseFinal = fract(noiseFinal); 
 
       // Anti-aliased step for sharp but smooth edges
@@ -171,6 +189,7 @@ declare global {
         uTime?: number;
         uAspect?: number;
         uMouseCoords?: THREE.Vector2;
+        uMouseVelocity?: THREE.Vector2;
         uMousePace?: number;
         uReveal?: number;
         SCALE?: number;
@@ -182,7 +201,7 @@ declare global {
         CURSOR_SCALE?: number;
         CURSOR_BOUNCE?: number;
         REVEAL_SIZE?: number;
-      } & Object3DNode<THREE.ShaderMaterial, typeof SimplexNoiseMaterial>
+      } & ThreeElement<typeof SimplexNoiseMaterial>
     }
   }
 }

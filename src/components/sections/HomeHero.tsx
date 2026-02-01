@@ -14,6 +14,7 @@ import { useSplitText } from '@/hooks/useSplitText';
 import BlobCursor from '../3d/blob';
 
 
+
 export function HomeHero() {
     const containerRef = useRef<HTMLDivElement>(null);
     const nextRaceRef = useRef<HTMLDivElement>(null);
@@ -113,25 +114,11 @@ export function HomeHero() {
                                 <GLBackground />
                             </Scene>
                             <BlobCursor
-                                blobType="circle"
-                                fillColor="#C0C0C0" // Silver for contrast
-                                innerColor="#ffffff"
-                                trailCount={3}
-                                sizes={[60, 125, 75]}
-                                innerSizes={[20, 35, 25]}
-                                opacities={[1, 1, 1]}
-                                shadowColor="#000000"
-                                shadowBlur={0}
-                                shadowOffsetX={0}
-                                shadowOffsetY={0}
-                                filterStdDeviation={30}
-                                useFilter={true}
-                                fastDuration={0.1}
-                                slowDuration={0.5}
-                                zIndex={10} // Blob sits in middle
-                                // @ts-ignore
-                                mixBlendMode="difference"
+                                zIndex={99}
+                                blendMode="exclusion"
+                                fillColor="#5cafc1"
                             />
+
 
                             {/* WebGL Foreground (Lando Head) - Z-Index 50 */}
                             <div className="gl-canvas foreground" style={{
