@@ -20,6 +20,7 @@ const BlobMaterial = shaderMaterial(
         uAspect: 1,
         uColor: new THREE.Color('#5cafc1'),
         uSpeed: 0,
+        uVelocity: new THREE.Vector2(0, 0),
     },
     // Vertex Shader
     `
@@ -39,7 +40,14 @@ const BlobMaterial = shaderMaterial(
     uniform float uAspect;
     uniform vec3 uColor;
     uniform float uSpeed;
+    uniform vec2 uVelocity;
     varying vec2 vUv;
+
+    vec2 rotate(vec2 v, float a) {
+        float s = sin(a);
+        float c = cos(a);
+        return mat2(c, -s, s, c) * v;
+    }
 
     float smin(float a, float b, float k) {
         float h = max(k - abs(a - b), 0.0) / k;
@@ -77,29 +85,56 @@ const BlobMaterial = shaderMaterial(
         return 1e10;
     }
 
-    float getHead(float d, vec2 uv, vec2 pHead, float speed) {
+    float getHead(float d, vec2 uv, vec2 pHead, float speed, vec2 velocity) {
         vec2 p = uv - pHead;
+
+        // 1. Calculate Rotation Angle
+        float angle = atan(velocity.y, velocity.x);
+
+        // 2. Rotate to align Local +X (Front) with Velocity Angle
+        // Our 'rotate' function implements inverse rotation (by -angle).
+        // Calling it with 'angle' rotates SPACE by -angle.
+        // Rotating SPACE by -angle rotates OBJECT by +angle.
+        p = rotate(p, angle);
+
+        // 3. Define Shape in Local Space (Facing RIGHT / +X)
         
-        // 1. Main Head Body: Rounded Oval
-        float dBody = length(p / vec2(1.1, 1.0)) - 0.14; 
+        // Base Circle (Stationary)
+        float dCircle = length(p) - 0.05;
         
-        // 2. Fins (Small Triangles)
-        // Left Fin (10-11 o'clock)
-        vec2 l0 = vec2(-0.06, 0.06);     // Base Inner
-        vec2 l1 = vec2(-0.13, 0.15);     // Tip
-        vec2 l2 = vec2(-0.11, 0.05);     // Base Outer
-        float dFinL = sdTriangle(p, l0, l1, l2);
+        // D-Shaped Head (Moving) - Smooth, rounded dome
+        // Use a simple oval for a bulbous, non-pointed front
+        float dOval = length(p / vec2(1.2, 0.9)) - 0.05; 
+        
+        // Side Shoulder Bumps
+        // Positioned on the "shoulders" of the streamlined body
+        
+        // Top Shoulder
+        vec2 f1_base = vec2(-0.03, 0.05); 
+        vec2 f1_tip  = vec2(-0.08, 0.08); 
+        vec2 f1_out  = vec2(-0.05, 0.06); 
+        float dFin1 = sdTriangle(p, f1_base, f1_tip, f1_out);
 
-        // Right Fin (1-2 o'clock)
-        vec2 r0 = vec2(0.06, 0.06);      // Base Inner
-        vec2 r1 = vec2(0.13, 0.15);      // Tip
-        vec2 r2 = vec2(0.11, 0.05);      // Base Outer
-        float dFinR = sdTriangle(p, r0, r1, r2);
+        // Bot Shoulder
+        vec2 f2_base = vec2(-0.03, -0.05); 
+        vec2 f2_tip  = vec2(-0.08, -0.08); 
+        vec2 f2_out  = vec2(-0.05, -0.06); 
+        float dFin2 = sdTriangle(p, f2_base, f2_tip, f2_out);
 
-        float dFins = min(dFinL, dFinR);
-        float dHead = smin(dBody, dFins, 0.3); // Smooth blend as requested
+        float dFins = min(dFin1, dFin2);
+        
+        // 4. Blend and Morph
+        float circleToOval = smoothstep(0.0, 0.4, speed);
+        float ovalToHead = smoothstep(0.2, 0.8, speed);
+        
+        // Define final streamlined shape 
+        float dWhale = smin(dOval, dFins, 0.4);
 
-        return smin(d, dHead, 0.08);
+         // Construct Head:
+        float dBase = mix(dCircle, dOval, circleToOval);
+        float dHead = mix(dBase, dWhale, 0.3 + 0.7 * ovalToHead);
+
+        return smin(d, dHead, 0.4);
     }
 
     float getBody(float d, vec2 uv, float speed, float aspect, vec2 top[5], vec2 bot[5]) {
@@ -108,16 +143,16 @@ const BlobMaterial = shaderMaterial(
         for(int i=0; i<4; i++) {
             vec2 pA = top[i]; pA.x *= aspect;
             vec2 pB = top[i+1]; pB.x *= aspect;
-            float r = 0.06 * (1.0 - float(i)/5.0) * clamp(speed*5.0, 0.0, 1.0);
-            res = smin(res, sdSegment(uv, pA, pB) - r, 0.08);
+            float r = 0.025 * (1.0 - float(i)/5.0) * (0.4 + 0.6 * clamp(speed * 5.0, 0.0, 1.0));
+            res = smin(res, sdSegment(uv, pA, pB) - r, 0.35);
         }
 
         // 3. BOTTOM V-CHAIN (Liquid shoulder fin - heavier)
         for(int i=0; i<4; i++) {
             vec2 pA = bot[i]; pA.x *= aspect;
             vec2 pB = bot[i+1]; pB.x *= aspect;
-            float r = 0.08 * (1.0 - float(i)/5.0) * clamp(speed*5.0, 0.0, 1.0);
-            res = smin(res, sdSegment(uv, pA, pB) - r, 0.08);
+            float r = 0.035 * (1.0 - float(i)/5.0) * (0.4 + 0.6 * clamp(speed * 5.0, 0.0, 1.0));
+            res = smin(res, sdSegment(uv, pA, pB) - r, 0.35);
         }
         return res;
     }
@@ -128,8 +163,8 @@ const BlobMaterial = shaderMaterial(
         for(int i=0; i<7; i++) {
             vec2 pA = tail[i]; pA.x *= aspect;
             vec2 pB = tail[i+1]; pB.x *= aspect;
-            float r = 0.07 * (1.0 - float(i)/8.0) * clamp(speed*5.0, 0.0, 1.0);
-            res = smin(res, sdSegment(uv, pA, pB) - r, 0.1);
+            float r = 0.03 * (1.0 - float(i)/8.0) * (0.4 + 0.6 * clamp(speed * 5.0, 0.0, 1.0));
+            res = smin(res, sdSegment(uv, pA, pB) - r, 0.45);
         }
         return res;
     }
@@ -140,7 +175,7 @@ const BlobMaterial = shaderMaterial(
         vec2 pHead = uHead; pHead.x *= uAspect;
 
         float d = getInitialPosition(uv, uAspect);
-        d = getHead(d, uv, pHead, uSpeed);
+        d = getHead(d, uv, pHead, uSpeed, uVelocity);
         d = getBody(d, uv, uSpeed, uAspect, uTopChain, uBotChain);
         d = getTail(d, uv, uSpeed, uAspect, uTailChain);
 
@@ -186,48 +221,92 @@ function BlobScene({ fillColor }: { fillColor: string }) {
         return { target, moveAngle, speed, isIdle };
     };
 
+    const currentVel = useRef(new THREE.Vector2(0, 0));
+    const currentSpeed = useRef(0);
+    const idleFrames = useRef(0);
+    const stableAngle = useRef(0);
+
     const updateHead = (target: THREE.Vector2) => {
-        head.current.lerp(target, 0.25);
+        head.current.lerp(target, 0.3);
     };
 
     const updateBody = (moveAngle: number, speed: number, isIdle: boolean) => {
         // Update Chains with S-Curve Whiplash
-        const updateChain = (chain: THREE.Vector2[], angleOffset: number, length: number, lag: number) => {
-            const firstTarget = new THREE.Vector2(
-                head.current.x + Math.cos(moveAngle + Math.PI + angleOffset) * (length * speed),
-                head.current.y + Math.sin(moveAngle + Math.PI + angleOffset) * (length * speed)
-            );
-
+        const updateChain = (chain: THREE.Vector2[], angleOffset: number, length: number, lags: number[]) => {
             if (isIdle) {
-                chain[0].lerp(head.current, 0.2);
+                // At rest, trail behind based on last known movement direction
+                const idleTarget = new THREE.Vector2(
+                    head.current.x + Math.cos(moveAngle + Math.PI + angleOffset) * length,
+                    head.current.y + Math.sin(moveAngle + Math.PI + angleOffset) * length
+                );
+                chain[0].lerp(idleTarget, 0.1);
             } else {
-                chain[0].lerp(firstTarget, 0.2);
+                const firstTarget = new THREE.Vector2(
+                    head.current.x + Math.cos(moveAngle + Math.PI + angleOffset) * ((length * 0.4) * speed),
+                    head.current.y + Math.sin(moveAngle + Math.PI + angleOffset) * ((length * 0.4) * speed)
+                );
+                chain[0].lerp(firstTarget, 0.35);
             }
 
             for (let i = 1; i < chain.length; i++) {
-                chain[i].lerp(chain[i - 1], lag - (i * 0.01));
+                const lag = lags[i - 1] ?? 0.2;
+                chain[i].lerp(chain[i - 1], lag);
             }
         };
 
-        updateChain(topChain, -0.6, 0.12, 0.4); // Top Shoulder
-        updateChain(botChain, 0.7, 0.15, 0.35);  // Bot Shoulder
-        return updateChain; // Return for reuse if needed, though we use it internally
+        const bodyLags = [0.2, 0.2, 0.25, 0.25];
+        updateChain(topChain, -0.6, 0.04, bodyLags);
+        updateChain(botChain, 0.7, 0.05, bodyLags);
+        return updateChain;
     };
 
     const updateTail = (updateChain: any, moveAngle: number, speed: number, isIdle: boolean) => {
-        updateChain(tailChain, 0.0, 0.22, 0.45); // Central Tail
+        const tailLags = [0.25, 0.3, 0.3, 0.35, 0.35, 0.4, 0.4, 0.45];
+        updateChain(tailChain, 0.0, 0.10, tailLags); // Central Tail
     };
 
     useFrame((state) => {
         const { target, moveAngle, speed, isIdle } = updateInitialPosition(state);
 
+        // Smooth velocity for rotation
+        // Reconstruct velocity vector from speed and angle, OR just lerp the computed vel
+        // But we computed 'vel' inside updateInitialPosition, let's just use speed/angle to make a vector
+        const targetVel = new THREE.Vector2(Math.cos(moveAngle), Math.sin(moveAngle));
+        // Only update if moving to avoid spinning at rest
+        if (speed > 0.01) {
+            currentVel.current.lerp(targetVel.multiplyScalar(speed), 0.1);
+            // Actually we just need direction, but let's keep it simple. 
+            // We can just lerp angle vector.
+            // Better:
+        }
+
+        // Simpler: Just lerp the unit vector derived from moveAngle
+        const dir = new THREE.Vector2(Math.cos(moveAngle), Math.sin(moveAngle));
+        if (speed > 0.01) {
+            currentVel.current.lerp(dir, 0.15);
+        }
+
+        // Idle detection: wait 30 frames before settling
+        if (speed < 0.01) {
+            idleFrames.current++;
+        } else {
+            idleFrames.current = 0;
+            // Update stable angle only when moving
+            stableAngle.current = THREE.MathUtils.lerp(stableAngle.current, moveAngle, 0.15);
+        }
+        const actualIsIdle = idleFrames.current > 30;
+
         updateHead(target);
-        const updateChainFunc = updateBody(moveAngle, speed, isIdle);
-        updateTail(updateChainFunc, moveAngle, speed, isIdle);
+
+        // Use stableAngle for resting tail direction
+        const currentAngle = actualIsIdle ? stableAngle.current : moveAngle;
+        const updateChainFunc = updateBody(currentAngle, speed, actualIsIdle);
+        updateTail(updateChainFunc, currentAngle, speed, actualIsIdle);
 
         if (materialRef.current) {
             materialRef.current.uTime = state.clock.elapsedTime;
-            materialRef.current.uSpeed = speed;
+            materialRef.current.uSpeed = currentSpeed.current;
+            materialRef.current.uVelocity = currentVel.current;
             materialRef.current.uHead.copy(head.current);
             materialRef.current.uTopChain = topChain;
             materialRef.current.uBotChain = botChain;
