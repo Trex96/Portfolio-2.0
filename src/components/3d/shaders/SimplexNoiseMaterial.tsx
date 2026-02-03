@@ -2,23 +2,20 @@ import { shaderMaterial } from '@react-three/drei'
 import * as THREE from 'three'
 import { extend, ThreeElement } from '@react-three/fiber'
 
+/**
+ * SimplexNoiseMaterial
+ * 
+ * Generates the raw, organic blob shapes using Simplex Noise.
+ * NOTE: Fluid distortion has been moved to the Composition Pass (BackgroundMaterial)
+ * for sharper edges and better performance.
+ */
 const SimplexNoiseMaterial = shaderMaterial(
   {
     uTime: 0,
     uAspect: 1,
-    uMouseCoords: new THREE.Vector2(0, 0),
-    uMouseVelocity: new THREE.Vector2(0, 0),
-    uMousePace: 0,
-    uReveal: 0,
-    SCALE: 1.0,
-    SPEED: 0.1,
-    DISTORT_SCALE: 1.0,
-    DISTORT_INTENSITY: 0.5,
-    NOISE_DETAIL: 3.0,
-    CURSOR_INTENSITY: 0.2,
-    CURSOR_SCALE: 2.2,
-    CURSOR_BOUNCE: -0.75,
-    REVEAL_SIZE: 25.0,
+    uScale: 1.0,
+    uSpeed: 0.1,
+    uDetail: 3.0,
   },
   // Vertex Shader
   `
@@ -31,29 +28,19 @@ const SimplexNoiseMaterial = shaderMaterial(
   // Fragment Shader
   `
     varying vec2 vUv;
-
     uniform float uAspect;
     uniform float uTime;
-    uniform float uMousePace;
-    uniform vec2 uMouseVelocity;
-    uniform float uReveal;
-    uniform vec2 uMouseCoords;
+    uniform float uScale;
+    uniform float uSpeed;
+    uniform float uDetail;
 
-    uniform float SCALE;
-    uniform float SPEED;
-    uniform float DISTORT_SCALE;
-    uniform float DISTORT_INTENSITY;
-    uniform float NOISE_DETAIL;
-    uniform float CURSOR_INTENSITY;
-    uniform float CURSOR_SCALE;
-    uniform float CURSOR_BOUNCE;
-    uniform float REVEAL_SIZE;
+    // --- Simplex Noise Functions (Ashima/WebGl-noise) ---
+    vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+    vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
 
-    // Simplex Noise Implementation (from VO variable)
-    vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
-    vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
-
-    float snoise(vec3 v){ 
+    float snoise(vec3 v) { 
       const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
       const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
 
@@ -69,7 +56,7 @@ const SimplexNoiseMaterial = shaderMaterial(
       vec3 x2 = x0 - i2 + 2.0 * C.xxx;
       vec3 x3 = x0 - 1. + 3.0 * C.xxx;
 
-      i = mod(i, 289.0 ); 
+      i = mod289(i); 
       vec4 p = permute( permute( permute( 
                  i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
                + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
@@ -115,95 +102,35 @@ const SimplexNoiseMaterial = shaderMaterial(
     }
 
     void main() {
-      /* 
-        UVs
-      */
       vec2 uv = vUv;
       uv.x *= uAspect;
-      uv.y += (REVEAL_SIZE + REVEAL_SIZE / 3.) * (1.0 - uReveal);
-      uv.y /= 1.0 + (REVEAL_SIZE) * (1.0 - uReveal);
-    
-      /* 
-        Cursor (Unused for distortion now)
-      */
-      vec2 mouse = uMouseCoords;
-      mouse *= vec2(0.5);
-      mouse += vec2(0.5);
-      mouse.x *= uAspect;
-    
-      float cursor = 1.0 - distance(mouse, uv) * CURSOR_SCALE;
-      cursor *= uMousePace;
-      cursor = clamp(cursor, CURSOR_BOUNCE, 1.0);
-    
-      /* 
-        Noise
-      */
-      float velLen = length(uMouseVelocity);
-      vec2 velDir = velLen > 0.0001 ? normalize(uMouseVelocity) : vec2(0.0);
+
+      // 1. Clean Noise Generation
+      float n = snoise(vec3(uv * uScale, uTime * uSpeed));
       
-      // Aerodynamic stretching: Distort UVs along velocity direction
-      vec2 aerodynamicUV = uv;
-      if (velLen > 0.0) {
-        float stretch = dot(uv - mouse, velDir);
-        aerodynamicUV -= velDir * stretch * velLen * 15.0; // The "tail" effect
-      }
+      // 2. Normalize to 0-1
+      float n01 = n * 0.5 + 0.5;
 
-      float noiseDistort = 0.5 + snoise(vec3(aerodynamicUV.x * DISTORT_SCALE, aerodynamicUV.y * DISTORT_SCALE, uTime * SPEED * 0.1)) * 0.5;
-    
-      // Re-enabled cursor influence on coordinates here for "warping" effect
-      float cursorFactor = cursor * CURSOR_INTENSITY;
+      // 3. Output: 
+      // R: Continuous Noise (0.0 to 1.0) - CRITICAL for gradient calculation
+      // G: Fract Noise (0.0 to 1.0) - For fill logic
+      // B: Unused
+      // A: Alpha
       
-      // Sharpening: increase scale and detail based on speed
-      float dynamicScale = SCALE * (1.0 + velLen * 10.0);
-      float dynamicDetail = NOISE_DETAIL * (1.0 + velLen * 5.0);
+      float nd = n01 * uDetail;
+      float nf = fract(nd);
 
-      float noiseFinal = 0.5 + snoise(
-        vec3(
-          (aerodynamicUV.x + (noiseDistort * DISTORT_INTENSITY) + cursorFactor) * dynamicScale, 
-          (aerodynamicUV.y + (noiseDistort * DISTORT_INTENSITY) + cursorFactor) * dynamicScale, 
-          uTime * SPEED
-        )
-      ) * 0.5;
-      noiseFinal *= dynamicDetail;
-      noiseFinal = fract(noiseFinal); 
-
-      // Anti-aliased step for sharp but smooth edges
-      float delta = fwidth(noiseFinal);
-      float noiseBase = smoothstep(0.5 - delta, 0.5 + delta, noiseFinal);
-
-      gl_FragColor = vec4(vec3(noiseBase, noiseFinal, 0.0), 1.0);
+      gl_FragColor = vec4(n01, nf, 0.0, 1.0);
     }
   `
-);
+)
 
-// Register the material with R3F
-extend({ SimplexNoiseMaterial });
+extend({ SimplexNoiseMaterial })
 
-// Type definitions for TypeScript usage
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      simplexNoiseMaterial: {
-        attach?: string;
-        args?: any[];
-        uTime?: number;
-        uAspect?: number;
-        uMouseCoords?: THREE.Vector2;
-        uMouseVelocity?: THREE.Vector2;
-        uMousePace?: number;
-        uReveal?: number;
-        SCALE?: number;
-        SPEED?: number;
-        DISTORT_SCALE?: number;
-        DISTORT_INTENSITY?: number;
-        NOISE_DETAIL?: number;
-        CURSOR_INTENSITY?: number;
-        CURSOR_SCALE?: number;
-        CURSOR_BOUNCE?: number;
-        REVEAL_SIZE?: number;
-      } & ThreeElement<typeof SimplexNoiseMaterial>
-    }
+export { SimplexNoiseMaterial }
+
+declare module '@react-three/fiber' {
+  interface ThreeElements {
+    simplexNoiseMaterial: ThreeElement<typeof SimplexNoiseMaterial>
   }
 }
-
-export { SimplexNoiseMaterial };

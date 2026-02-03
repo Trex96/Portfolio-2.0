@@ -1,33 +1,41 @@
-
 import { shaderMaterial } from '@react-three/drei'
 import * as THREE from 'three'
 import { extend, ThreeElement } from '@react-three/fiber'
 
 /**
- * Background Material Bundle
- * Ported from lando.OFF+BRAND.js
+ * Background Material (Verified Live Site Version)
  * 
- * Replicates the O9 class shader responsible for compositing:
- * - Background Noise (Gel)
- * - Fluid Cursor Effect
- * - Lando Head/Helmet (tHelmet)
+ * Logic: "Filled Blob" Rendering
+ * - No Edge Detection/Outlines
+ * - Smooth mixing between Background and Blob Color based on Noise
+ * - Distortion applied via UV displacement from Fluid Simulation
  */
 
 export const BackgroundMaterial = shaderMaterial(
   {
+    uTime: 0,
+    uAspect: 1,
+    uResolution: new THREE.Vector2(1, 1),
+    // Textures
     tBackgroundNoise: null,
     tCursorEffect: null,
-    tHelmet: null,
-    uTime: 0,
-    uAspect: 0,
-    uReveal: 0,
-    uCursorIntensity: 1.0, // Default to visible
-    COLOR_BACKGROUND: new THREE.Color('#282c20'), // Dark Green (Gel Background)
-    COLOR_FOREGROUND: new THREE.Color('#f4f4ed'), // Light White (Gel Highlight)
-    COLOR_CURSOR_BACKGROUND: new THREE.Color('#7a206a'), // Purple (Cursor Gel Background)
-    COLOR_CURSOR_FOREGROUND: new THREE.Color('#ffd600'), // Yellow (Cursor Gel Highlight)
-    COLOR_CURSOR_OUTLINE: new THREE.Color('#d2ff00'),  // Lime (Cursor Outline)
-    OUTLINE: true,
+
+    // Colors
+    COLOR_BG_LIGHT: new THREE.Color('#F8F8F3'),
+    COLOR_GEL_FILL: new THREE.Color('#F8F8F3'),
+    COLOR_GEL_STROKE: new THREE.Color('#CBCBB9'),
+    COLOR_CURSOR_FOREGROUND: new THREE.Color('#CFD2C5'),
+
+    // Scrolled (Scroll > 0)
+    COLOR_BG_DARK: new THREE.Color('#282C20'),
+    COLOR_GEL_FILL_DARK: new THREE.Color('#1A1D18'),
+
+    // Logic
+    uStrokeWidth: 2.0, // Physical pixels
+    uDistortIntensity: 0.02,
+    uCursorIntensity: 1.0,
+    uReveal: 0.0,
+    uDetail: 3.0, // [NEW] Needed here to reconstruct rings
   },
   // Vertex Shader
   `
@@ -39,108 +47,101 @@ export const BackgroundMaterial = shaderMaterial(
   `,
   // Fragment Shader
   `
-    uniform sampler2D tBackgroundNoise;
-    uniform sampler2D tCursorEffect;
-    uniform sampler2D tHelmet;
+    precision highp float;
+
     uniform float uTime;
     uniform float uAspect;
-    uniform float uReveal;
+    uniform vec2 uResolution;
+    uniform sampler2D tBackgroundNoise;
+    uniform sampler2D tCursorEffect;
+    
+    uniform float uDistortIntensity;
     uniform float uCursorIntensity;
+    uniform float uReveal;
+    uniform float uDetail;
 
-    uniform vec3 COLOR_BACKGROUND;
-    uniform vec3 COLOR_FOREGROUND;
-    uniform vec3 COLOR_CURSOR_BACKGROUND;
+    // Palette
+    uniform vec3 COLOR_BG_LIGHT;
+    uniform vec3 COLOR_GEL_FILL;
+    uniform vec3 COLOR_GEL_STROKE;
+    uniform vec3 COLOR_BG_DARK;
+    uniform vec3 COLOR_GEL_FILL_DARK;
     uniform vec3 COLOR_CURSOR_FOREGROUND;
-    uniform vec3 COLOR_CURSOR_OUTLINE;
-    uniform bool OUTLINE;
 
+    uniform float uStrokeWidth;
     varying vec2 vUv;
 
-    // Utility functions from lando.OFF+BRAND.js
-    vec3 adjustContrast(vec3 color, float value) {
-      return 0.5 + (1.0 + value) * (color - 0.5);
-    }
-
-    vec3 toGrayscale(vec3 color) {
-      float average = (color.r + color.g + color.b) / 3.0;
-      return vec3(average);
-    }
-
-    vec3 blendScreen(vec3 base, vec3 blend) {
-      return 1.0 - ((1.0 - base) * (1.0 - blend));
-    }
-    
-    vec3 blendHardLight(vec3 base, vec3 blend) {
-      return mix(
-        2.0 * base * blend,
-        1.0 - 2.0 * (1.0 - base) * (1.0 - blend),
-        step(0.5, blend)
-      );
+    // PROPER GRADIENT-NORMALIZED SDF FUNCTION
+    // guarantees constant 1px/2px width regardless of noise slope
+    float aastep(float threshold, float value) {
+      float afwidth = length(vec2(dFdx(value), dFdy(value))) * 0.70710678118654757;
+      return smoothstep(threshold - afwidth, threshold + afwidth, value);
     }
 
     void main() {
-      vec4 textureBackgroundNoise = texture2D(tBackgroundNoise, vUv);
-      vec4 textureCursorEffect = texture2D(tCursorEffect, vUv);
+      vec2 uv = vUv;
+
+      // 1. Fluid Distortion
+      vec4 fluid = texture2D(tCursorEffect, uv);
+      vec2 velocity = fluid.xy; 
+      float velMag = length(velocity);
+      vec2 displacedUV = uv - velocity * uDistortIntensity;
+
+      // 2. High-Precision Forward Difference Gradient
+      // We calculate physically correct derivatives by sampling neighbors.
+      // This bypasses fwidth() which can be unstable on noise fields.
       
-      /* 
-         Inversion Logic:
-         FluidSimulation outputs a WHITE background (velocity length 0 gives mix(white, color, 0) = white).
-         We need to invert this so background is BLACK (0.0) and cursor is non-zero for masking.
-      */
-      textureCursorEffect.rgb = 1.0 - textureCursorEffect.rgb;
+      vec2 pixelStep = 1.0 / uResolution; 
       
-      // Smoothstep for liquidy edges
-      float cursorEffect = smoothstep(0.0, 0.2, textureCursorEffect.r);
-
-      /* 
-        Outline
-      */
-      float noiseBase = textureBackgroundNoise.r;
-
-      vec3 background = mix(
-        COLOR_BACKGROUND, 
-        mix(COLOR_BACKGROUND, COLOR_FOREGROUND, uReveal),
-        noiseBase
-      );
-
-      /* 
-         Cursor Overlay REMOVED (User requested DOM-based BlobCursor instead)
-      */
-      // vec3 cursorBackground = mix(COLOR_CURSOR_BACKGROUND, COLOR_CURSOR_FOREGROUND, noiseBase);
-      // ... (logic removed) ...
+      float n_center = texture2D(tBackgroundNoise, displacedUV).r;
+      float n_right  = texture2D(tBackgroundNoise, displacedUV + vec2(pixelStep.x, 0.0)).r;
+      float n_up     = texture2D(tBackgroundNoise, displacedUV + vec2(0.0, pixelStep.y)).r;
       
-      // Keep background mix as simple as possible or revert to previous state
-      /* 
-      background = mix(
-        background,
-        cursorBackground,
-        cursorEffect * uCursorIntensity
-      ); 
-      */
-     
-      /* 
-         Cursor Overlay REMOVED (User requested DOM-based BlobCursor instead)
-         Logic for mixing color disabled.
-      */
+      // Calculate change per pixel
+      float dndx = n_right - n_center;
+      float dndy = n_up - n_center;
       
-      // Ensure background variable is valid if previous mix was removed
-      // (Variable 'background' is already defined above)
+      // Topology Scaling (v = n * uDetail)
+      float v = n_center * uDetail;
+      
+      // Gradient Magnitude (Change of v per pixel)
+      float gradLen = length(vec2(dndx, dndy)) * uDetail;
+      float safeGrad = max(gradLen, 0.00001);
 
-      /*
-        Tone Mapping / Post
-      */
-      // Note: Replaced custom tone mapping with standard or simplified version if needed
-      // but keeping color logic close to source.
+      // 3. Signed Pixel Distance
+      // Distance from the 0.5 threshold, in units of Pixels.
+      // fract(v) wraps 0..1. Center is 0.5.
+      float distVal = fract(v) - 0.5;
+      float signedPixelDist = distVal / safeGrad;
 
-      gl_FragColor = vec4(background, 1.0);
+      // 4. Smooth Fill Mask
+      // AA the fill edge at 0.0 distance
+      float fillMask = smoothstep(-0.5, 0.5, signedPixelDist);
 
-      // Include standard tone mapping if available
-      #include <tonemapping_fragment>
+      // 5. Uniform Stroke Mask (Width = uStrokeWidth pixels)
+      // We accept a pixel distance of +/- halfWidth
+      float halfWidth = uStrokeWidth * 0.5;
+      
+      // Use a wider smoothstep window (1.5px) for softer, cleaner AA
+      float strokeAlpha = 1.0 - smoothstep(halfWidth - 0.5, halfWidth + 1.0, abs(signedPixelDist));
+
+      // 6. Compose Colors
+      vec3 currentBg = mix(COLOR_BG_LIGHT, COLOR_BG_DARK, uReveal);
+      vec3 currentFill = mix(COLOR_GEL_FILL, COLOR_GEL_FILL_DARK, uReveal);
+      vec3 currentStroke = mix(COLOR_GEL_STROKE, COLOR_GEL_FILL_DARK, uReveal);
+
+      vec3 finalColor = mix(currentBg, currentFill, fillMask);
+      finalColor = mix(finalColor, currentStroke, strokeAlpha);
+
+      // 7. Hotspot
+      float hotspotMask = smoothstep(0.01, 0.4, velMag);
+      finalColor = mix(finalColor, COLOR_CURSOR_FOREGROUND, hotspotMask * uCursorIntensity);
+
+      gl_FragColor = vec4(finalColor, 1.0);
       #include <colorspace_fragment>
     }
   `
 )
-
 extend({ BackgroundMaterial })
 
 declare module '@react-three/fiber' {

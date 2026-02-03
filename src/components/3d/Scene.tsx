@@ -1,6 +1,7 @@
 'use client';
 
 import { Canvas } from '@react-three/fiber';
+import * as THREE from 'three';
 import { PerspectiveCamera } from '@react-three/drei';
 import { Suspense, useState, useEffect } from 'react';
 
@@ -24,7 +25,8 @@ export function Scene({ children, className }: SceneProps) {
                 gl={{
                     antialias: true,
                     alpha: true,
-                    powerPreference: 'high-performance'
+                    powerPreference: 'high-performance',
+                    outputColorSpace: THREE.SRGBColorSpace
                 }}
                 dpr={[1, 2]}
             >

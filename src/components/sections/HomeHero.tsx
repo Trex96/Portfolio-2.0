@@ -33,27 +33,21 @@ export function HomeHero() {
         // Initialize landoGL global for shaders
         if (typeof window !== 'undefined') {
             (window as any).landoGL = (window as any).landoGL || { reveal: 0 };
+            // Ensure we start at 0 (Light Mode)
+            (window as any).landoGL.reveal = 0;
         }
 
         // Entrance animations timeline
         const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
 
-        // Global reveal animation for shaders
-        tl.to((window as any).landoGL, {
-            reveal: 1,
-            duration: 2.5,
-            ease: 'power2.out',
-            onUpdate: () => {
-                // Force a re-render or just let the GL loop pick it up
-            }
-        }, 0);
+        // REMOVED: Global reveal auto-animation (This was forcing dark mode!)
 
         // Next Race card entrance
         if (nextRaceRef.current) {
             tl.fromTo(nextRaceRef.current,
                 { y: 50, opacity: 0 },
                 { y: 0, opacity: 1, duration: 1 },
-                1.5 // Start after reveal starts
+                0.5 // Start earlier
             );
         }
 
@@ -66,8 +60,9 @@ export function HomeHero() {
             );
         }
 
-        // Sticky pin animation (matches original site scroll behavior)
+        // SCROLL INTERACTION: Animate Reveal 0 -> 1 based on scroll
         if (containerRef.current) {
+            // 1. Pinning
             ScrollTrigger.create({
                 trigger: containerRef.current,
                 start: 'top top',
@@ -75,6 +70,18 @@ export function HomeHero() {
                 pin: true,
                 pinSpacing: false,
                 scrub: 1,
+            });
+
+            // 2. Reveal Shader Animation (Light -> Dark)
+            gsap.to((window as any).landoGL, {
+                reveal: 1,
+                ease: 'none', // Linear scrub
+                scrollTrigger: {
+                    trigger: containerRef.current,
+                    start: 'top top',
+                    end: '+=80%', // Finish transition slightly before unpin
+                    scrub: true,
+                }
             });
         }
     }, { scope: containerRef, dependencies: [] });
