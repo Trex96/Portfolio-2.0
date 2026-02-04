@@ -232,11 +232,11 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
     }, []);
 
     // --- Scene Setup ---
-    const scene = useMemo(() => {
+    const { scene, quadMesh } = useMemo(() => {
         const s = new THREE.Scene();
         const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
         s.add(mesh);
-        return s;
+        return { scene: s, quadMesh: mesh };
     }, []);
     const camera = useMemo(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), []);
 
@@ -273,7 +273,7 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
             materials.splat.uniforms.radius.value = 0.005; // Tight brush
 
             gl.setRenderTarget(fbos.velocity.write);
-            scene.children[0].material = materials.splat;
+            quadMesh.material = materials.splat;
             gl.render(scene, camera);
             fbos.velocity.swap();
         }
@@ -283,21 +283,21 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
         // 3. Curl (Vorticity Confinement Pt 1)
         materials.curl.uniforms.uVelocity.value = fbos.velocity.read.texture;
         gl.setRenderTarget(fbos.curl);
-        scene.children[0].material = materials.curl;
+        quadMesh.material = materials.curl;
         gl.render(scene, camera);
 
         // 4. Vorticity (Vorticity Confinement Pt 2)
         materials.vorticity.uniforms.uVelocity.value = fbos.velocity.read.texture;
         materials.vorticity.uniforms.uCurl.value = fbos.curl.texture;
         gl.setRenderTarget(fbos.velocity.write);
-        scene.children[0].material = materials.vorticity;
+        quadMesh.material = materials.vorticity;
         gl.render(scene, camera);
         fbos.velocity.swap();
 
         // 5. Divergence
         materials.divergence.uniforms.uVelocity.value = fbos.velocity.read.texture;
         gl.setRenderTarget(fbos.divergence);
-        scene.children[0].material = materials.divergence;
+        quadMesh.material = materials.divergence;
         gl.render(scene, camera);
 
         // 6. Clear Pressure
@@ -308,7 +308,7 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
 
         // 7. Pressure (Jacobi Iteration)
         materials.pressure.uniforms.uDivergence.value = fbos.divergence.texture;
-        scene.children[0].material = materials.pressure;
+        quadMesh.material = materials.pressure;
 
         for (let i = 0; i < 20; i++) {
             materials.pressure.uniforms.uPressure.value = fbos.pressure.read.texture;
@@ -321,7 +321,7 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
         materials.gradientSubtract.uniforms.uPressure.value = fbos.pressure.read.texture;
         materials.gradientSubtract.uniforms.uVelocity.value = fbos.velocity.read.texture;
         gl.setRenderTarget(fbos.velocity.write);
-        scene.children[0].material = materials.gradientSubtract;
+        quadMesh.material = materials.gradientSubtract;
         gl.render(scene, camera);
         fbos.velocity.swap();
 
@@ -330,10 +330,10 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
         materials.advection.uniforms.uVelocity.value = fbos.velocity.read.texture;
         materials.advection.uniforms.uSource.value = fbos.velocity.read.texture;
         materials.advection.uniforms.dt.value = 0.016;
-        materials.advection.uniforms.dissipation.value = 0.98; // Trails fade out
+        materials.advection.uniforms.dissipation.value = 0.992; // [TUNED] Longer trails for 'Liquid/Gel' feel (was 0.98)
 
         gl.setRenderTarget(fbos.velocity.write);
-        scene.children[0].material = materials.advection;
+        quadMesh.material = materials.advection;
         gl.render(scene, camera);
         fbos.velocity.swap();
 

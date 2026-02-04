@@ -88,7 +88,7 @@ export function GLBackground() {
             // Distortion Intensity (Calibrated to site precise 0.02)
             bgMaterialRef.current.uDistortIntensity = 0.02;
             // Stroke Width (Calibrated to 1 physical pixel scale)
-            bgMaterialRef.current.uStrokeWidth = 2.0; // 2 physical pixels thick
+            bgMaterialRef.current.uStrokeWidth = 0.3; // 2 physical pixels thick
         }
     });
 
@@ -121,9 +121,9 @@ export function GLBackground() {
                     transparent={true}
                     uReveal={0}
                     uCursorIntensity={1.0}
-                    uDistortIntensity={0.02}
-                    uStrokeWidth={1.25}      // [TUNED] Thinner strokes as requested (was 2.0)
-                    uDetail={3.0}
+                    uDistortIntensity={20} // [TUNED] Increased for visible liquid warp (was 0.02)
+                    uStrokeWidth={0.25}
+                    uDetail={6.0}
                     COLOR_BG_LIGHT="#F8F8F3"
                     COLOR_GEL_FILL="#F8F8F3"
                     COLOR_GEL_STROKE="#CBCBB9"
