@@ -13,8 +13,10 @@ const SimplexNoiseMaterial = shaderMaterial(
   {
     uTime: 0,
     uAspect: 1,
-    uScale: 1.0,
+    uScale: 0.075,
     uSpeed: 0.1,
+    uDistortScale: 1.0,
+    uDistortIntensity: 0.5,
     uDetail: 3.0,
   },
   // Vertex Shader
@@ -32,6 +34,8 @@ const SimplexNoiseMaterial = shaderMaterial(
     uniform float uTime;
     uniform float uScale;
     uniform float uSpeed;
+    uniform float uDistortScale;
+    uniform float uDistortIntensity;
     uniform float uDetail;
 
     // --- Simplex Noise Functions (Ashima/WebGl-noise) ---
@@ -103,22 +107,31 @@ const SimplexNoiseMaterial = shaderMaterial(
 
     void main() {
       vec2 uv = vUv;
-      uv.x *= uAspect;
-
-      // 1. Clean Noise Generation
-      float n = snoise(vec3(uv * uScale, uTime * uSpeed));
+      
+      // 1. NESTED NOISE Strategy (Pillar A)
+      // Centered, Aspect-Corrected Coordinate Space
+      vec2 noiseUv = uv;
+      noiseUv -= 0.5;
+      noiseUv.x *= uAspect;
+      
+      // Calculate distance from center for a radial/concentric base
+      float distToCenter = length(noiseUv);
+      
+      // Primary noise generates the distortion field
+      float noiseDistortion = snoise(vec3(noiseUv * uDistortScale, uTime * uSpeed * 0.5));
+      
+      // Secondary noise uses the distorted UVs + radial base
+      vec2 distortedUv = noiseUv + noiseDistortion * uDistortIntensity;
+      float n = snoise(vec3(distortedUv * uScale, uTime * uSpeed));
+      
+      // Mix noise with radial distance to force concentric loops
+      float combined = mix(n, 1.0 - distToCenter, 0.4); 
       
       // 2. Normalize to 0-1
-      float n01 = n * 0.5 + 0.5;
+      float n01 = combined * 0.5 + 0.5;
 
-      // 3. Output: 
-      // R: Continuous Noise (0.0 to 1.0) - CRITICAL for gradient calculation
-      // G: Fract Noise (0.0 to 1.0) - For fill logic
-      // B: Unused
-      // A: Alpha
-      
-      float nd = n01 * uDetail;
-      float nf = fract(nd);
+      // 3. SAWTOOTH OUTPUT (Lando Official Method)
+      float nf = fract(n01 * uDetail);
 
       gl_FragColor = vec4(n01, nf, 0.0, 1.0);
     }

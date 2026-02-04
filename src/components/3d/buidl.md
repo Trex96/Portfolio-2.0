@@ -1,70 +1,49 @@
-# Build Doc: Liquid Topography (The Blob)
+# Visual Manifesto: Lando Norris 100% Match
 
-This document explains the multi-pass GPGPU pipeline used to create the interactive "Liquid Topography" effect seen in the hero section.
+The goal is to achieve an indistinguishable visual duplicate of [landonorris.com](https://landonorris.com/). This requires moving beyond simple patterns into a **Physical Fluid Display**.
 
-## Architecture Overview
+## 1. Visual Pillars (The "Soul")
 
-The system consists of three main stages running every frame:
+### Pillar A: Pressure-Based Fluid Displacement
+The cursor must feel like it's "pressing" into a gel. 
+- **The Look**: Lines should bulge, swirl, and ripple with inertia.
+- **The Tech**: Use a high-viscosity GPGPU fluid simulation (`FluidSimulation.tsx`).
+- **Optimization**: Use `HalfFloatType` textures for silky smooth displacement without stepping.
 
-```mermaid
-graph TD
-    A[Mouse Input] --> B[Fluid Simulation]
-    B --> C[Velocity Texture]
-    D[Simplex Noise] --> E[Noise Generation FBO]
-    E --> F[Clean Ring Texture]
-    C --> G[Final Background Shader]
-    F --> G
-    G --> H[Interactive Liquid Canvas]
-```
+### Pillar B: Organic "Clump" & Film Grain
+The background is not sterile; it has "grit."
+- **The Look**: Sublte mottled shading (clumpy noise) and fine film grain.
+- **The Tech**: Layer a secondary low-frequency simplex noise in the `BackgroundMaterial` and add a `Noise` pass from `postprocessing` for the grain.
 
-## 1. Fluid Simulation (`FluidSimulation.tsx`)
+### Pillar C: "Technical Drawing" Line Quality
+Lines must stay hairline-thin regardless of how hard the fluid is swirling.
+- **The Look**: Constant-width, slightly aliased 1px lines.
+- **The Tech**: Use the neighbor-sampling "Sawtooth" method. It is the only way to maintain line thickness under heavy non-linear distortion.
 
-A GPGPU solver for **incompressible fluid** (Navier-Stokes equations).
+### Pillar D: Earthy High-Contrast Palette
+- **Light Theme**: #F8F8F3 (Bone)
+- **Dark Theme**: #1A1D18 (Asphalt Green)
+- **Ring Stroke**: #CBCBB9 (Muted Bronze)
+- **Highlight**: #D5F500 (Lando Lime - for hotspots)
 
-- **Resolution**: 512x512 FBO.
-- **Physics**: Solves for Advection, Curl, Vorticity, Divergence, and Pressure.
-- **Interaction**: Mouse movement creates "Splats" of velocity in the simulation.
-- **Output**: A floating-point texture where the `Red` and `Green` channels represent the `X` and `Y` velocity of the fluid at that point.
+---
 
-## 2. Noise Generation (`SimplexNoiseMaterial.tsx`)
+## 2. Updated Proposed Changes
 
-Generates the "Topographic Rings" structure.
+### [BackgroundMaterial.tsx](file:///Users/bikashmarandi/iCloud%20Drive%20%28Archive%29/Documents/Development/Projects/Portfolio%20dev/landonorris-next/src/components/3d/shaders/BackgroundMaterial.tsx) [MODIFY]
+- **Internal Clump**: Add a very subtle secondary noise layer to the background color calculation to simulate the "clumpy" look.
+- **Hotspot Glow**: Implement a radial glow centered on the cursor's velocity field.
 
-- **Algorithm**: Simplex Noise (Procedural).
-- **Parameters**: 
-  - `uDetail`: Set to **3.0** (Calibrated to site).
-  - `uScale`: Controls the size of the organic shapes.
-- **Caching**: Rendered to a dedicated `noiseTarget` FBO to ensure high-precision gradients for the final composition.
+### [FluidSimulation.tsx](file:///Users/bikashmarandi/iCloud%20Drive%20%28Archive%29/Documents/Development/Projects/Portfolio%20dev/landonorris-next/src/components/3d/FluidSimulation.tsx) [MODIFY]
+- **Viscosity**: Increase Jacobi iterations to 30 for more accurate pressure solving.
+- **Persistence**: Fine-tune `dissipation` to exactly match the site's trailing behavior.
 
-## 3. Final Composition (`BackgroundMaterial.tsx`)
+### [PostProcessing Stack] [NEW]
+- Introduce a Grain/Noise pass to give the final output the "premium film" feel.
 
-The "Beauty Pass" that creates the liquid-gel visual.
+---
 
-### Displacement Logic
-The fluid's velocity is used to displace the UV coordinates before sampling the noise:
-```glsl
-vec2 velocity = texture2D(tCursorEffect, uv).xy;
-vec2 displacedUV = uv - velocity * uDistortIntensity;
-float noise = texture2D(tBackgroundNoise, displacedUV).r;
-```
-
-### Topographic SDF Logic
-Instead of simple color mapping, we use **Signed Distance Field** logic to render perfectly uniform hairline rings:
-1. **Sample Noise**: Sample the noise at the displaced UV.
-2. **Calculate Gradient**: Uses forward-differencing to find how fast the noise changes per pixel.
-3. **Normalize Distance**: Divide the current noise value by the gradient magnitude to get a distance in **Pixels**.
-4. **AA Stroke**: Use `smoothstep` on the pixel distance to render a stroke that is exactly `N` pixels wide, regardless of warp distortion.
-
-## Key Parameters (Sync with landonorris.com)
-
-| Parameter | Value | Description |
-| :--- | :--- | :--- |
-| `uDetail` | `3.0` | Number of topographic layers. |
-| `uDistortIntensity` | `0.5` | Strength of the liquid warp effect. |
-| `uStrokeWidth` | `2.0` | Thickness of the ring outlines (in physical pixels). |
-| `uCursorIntensity`| `0.15`| Intensity of the "Highlight" color on movement. |
-
-## Dependencies
-- `@react-three/fiber`: Main loop and mesh management.
-- `@react-three/drei`: Shader material utilities.
-- `three`: Core WebGL logic and FBO management.
+## 3. Verification Plan
+- **"The Press Test"**: Move cursor rapidly. Do lines swirl and settle with a "gel-like" delay?
+- **"The Grain Test"**: Look closely at the background in a dark room. Is there a subtle organic "vibration" (grain)?
+- **"The Color Test"**: Hex-match against the live site screenshots.

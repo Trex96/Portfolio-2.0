@@ -41,9 +41,18 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
         uniform float dissipation;
 
         void main() {
+            // BFECC (Back and Forth Error Compensation and Correction)
+            // As found in official lando.OFF+BRAND source code
             vec2 coord = vUv - dt * texture2D(uVelocity, vUv).xy * texelSize;
-            vec4 result = texture2D(uSource, coord);
-            gl_FragColor = result * dissipation;
+            
+            // Forward then Backward to estimate error
+            vec2 coordForward = coord;
+            vec2 coordBackward = coordForward + dt * texture2D(uVelocity, coordForward).xy * texelSize;
+            
+            vec2 error = (vUv - coordBackward) * 0.5;
+            vec2 correctedCoord = coordForward + error;
+            
+            gl_FragColor = texture2D(uSource, correctedCoord) * dissipation;
         }
     `;
 
@@ -201,20 +210,20 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
                 // Advection
                 uVelocity: { value: null },
                 uSource: { value: null },
-                dissipation: { value: 0.98 },
+                dissipation: { value: 0.992 },
                 // Splat
                 uTarget: { value: null },
                 aspectRatio: { value: 1.0 },
                 color: { value: new THREE.Vector3() },
                 point: { value: new THREE.Vector2() },
-                radius: { value: 0.02 }, // Bigger radius for visibility
+                radius: { value: 0.045 }, // EXTREME LENS: Creates the "Blob" distortion
                 // Divergence
                 uDivergence: { value: null },
                 // Pressure
                 uPressure: { value: null },
                 // Curl
                 uCurl: { value: null },
-                curl: { value: 30 },
+                curl: { value: 50 }, // More active liquid
             },
             depthTest: false,
             depthWrite: false,
@@ -262,7 +271,7 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
 
         const velocity = new THREE.Vector2()
             .subVectors(currentMouse, lastMouse.current)
-            .multiplyScalar(800.0); // Amplify weak movements
+            .multiplyScalar(1000.0); // Calibrated Pressure
 
         // 2. Splat (Apply Input)
         if (velocity.lengthSq() > 0) {
@@ -270,7 +279,7 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
             materials.splat.uniforms.aspectRatio.value = size.width / size.height;
             materials.splat.uniforms.point.value.copy(currentMouse);
             materials.splat.uniforms.color.value.set(velocity.x, velocity.y, 1.0);
-            materials.splat.uniforms.radius.value = 0.005; // Tight brush
+            materials.splat.uniforms.radius.value = 0.045;
 
             gl.setRenderTarget(fbos.velocity.write);
             quadMesh.material = materials.splat;
@@ -301,7 +310,6 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
         gl.render(scene, camera);
 
         // 6. Clear Pressure
-        // (Optional: can keep pressure for stability, but clearing often safer)
         gl.setRenderTarget(fbos.pressure.write);
         gl.clear();
         fbos.pressure.swap();
@@ -310,7 +318,7 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
         materials.pressure.uniforms.uDivergence.value = fbos.divergence.texture;
         quadMesh.material = materials.pressure;
 
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 30; i++) { // Increased to 30 for stability
             materials.pressure.uniforms.uPressure.value = fbos.pressure.read.texture;
             gl.setRenderTarget(fbos.pressure.write);
             gl.render(scene, camera);
@@ -330,7 +338,7 @@ export const FluidSimulation: React.FC<{ onTextureUpdate: (texture: THREE.Textur
         materials.advection.uniforms.uVelocity.value = fbos.velocity.read.texture;
         materials.advection.uniforms.uSource.value = fbos.velocity.read.texture;
         materials.advection.uniforms.dt.value = 0.016;
-        materials.advection.uniforms.dissipation.value = 0.992; // [TUNED] Longer trails for 'Liquid/Gel' feel (was 0.98)
+        materials.advection.uniforms.dissipation.value = 0.995; // Calibrated Physics
 
         gl.setRenderTarget(fbos.velocity.write);
         quadMesh.material = materials.advection;

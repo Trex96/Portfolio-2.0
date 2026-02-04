@@ -2,7 +2,7 @@
 
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { PerspectiveCamera } from '@react-three/drei';
+import { OrthographicCamera } from '@react-three/drei';
 import { Suspense, useState, useEffect } from 'react';
 
 interface SceneProps {
@@ -30,7 +30,8 @@ export function Scene({ children, className }: SceneProps) {
                 }}
                 dpr={[1, 2]}
             >
-                <PerspectiveCamera makeDefault position={[0, 0, 3]} fov={15} />
+                {/* Fixed Full-Screen Orthographic Camera */}
+                <OrthographicCamera makeDefault position={[0, 0, 1]} zoom={1} />
                 <Suspense fallback={null}>
                     {children}
                 </Suspense>

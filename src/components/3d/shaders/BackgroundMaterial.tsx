@@ -20,10 +20,10 @@ export const BackgroundMaterial = shaderMaterial(
     tBackgroundNoise: null,
     tCursorEffect: null,
 
-    // Colors
-    COLOR_BG_LIGHT: new THREE.Color('#F8F8F3'),
-    COLOR_GEL_FILL: new THREE.Color('#F8F8F3'),
-    COLOR_GEL_STROKE: new THREE.Color('#CBCBB9'),
+    // Colors - Tuned for Lando 100% Match (Exact Vis)
+    COLOR_BG_LIGHT: new THREE.Color('#F4F4ED'), // Lando "White" (Warm Cream)
+    COLOR_GEL_FILL: new THREE.Color('#EFEFE5'), // Lando "Cream" (Greenish Tint)
+    COLOR_GEL_STROKE: new THREE.Color('#BABDAA'), // Dark Olive for contrast
     COLOR_CURSOR_FOREGROUND: new THREE.Color('#CFD2C5'),
 
     // Scrolled (Scroll > 0)
@@ -31,11 +31,11 @@ export const BackgroundMaterial = shaderMaterial(
     COLOR_GEL_FILL_DARK: new THREE.Color('#1A1D18'),
 
     // Logic
-    uStrokeWidth: 2.0, // Physical pixels
+    uStrokeWidth: 2.0,
     uDistortIntensity: 0.02,
     uCursorIntensity: 1.0,
     uReveal: 0.0,
-    uDetail: 3.0, // [NEW] Needed here to reconstruct rings
+    uDetail: 2.0, // [TUNED] 6.0 for ~5-6 Rings
   },
   // Vertex Shader
   `
@@ -68,74 +68,117 @@ export const BackgroundMaterial = shaderMaterial(
     uniform vec3 COLOR_GEL_FILL_DARK;
     uniform vec3 COLOR_CURSOR_FOREGROUND;
 
-    uniform float uStrokeWidth;
     varying vec2 vUv;
 
-    // PROPER GRADIENT-NORMALIZED SDF FUNCTION
-    // guarantees constant 1px/2px width regardless of noise slope
-    float aastep(float threshold, float value) {
-      float afwidth = length(vec2(dFdx(value), dFdy(value))) * 0.70710678118654757;
-      return smoothstep(threshold - afwidth, threshold + afwidth, value);
+    // --- Simplex Noise (Single-Pass Version) ---
+    vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+    vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+    float snoise(vec3 v) { 
+      const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
+      const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+      vec3 i  = floor(v + dot(v, C.yyy) );
+      vec3 x0 =   v - i + dot(i, C.xxx) ;
+      vec3 g = step(x0.yzx, x0.xyz);
+      vec3 l = 1.0 - g;
+      vec3 i1 = min( g.xyz, l.zxy );
+      vec3 i2 = max( g.xyz, l.zxy );
+      vec3 x1 = x0 - i1 + 1.0 * C.xxx;
+      vec3 x2 = x0 - i2 + 2.0 * C.xxx;
+      vec3 x3 = x0 - 1. + 3.0 * C.xxx;
+      i = mod289(i); 
+      vec4 p = permute( permute( permute( 
+                 i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+               + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
+               + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+      float n_ = 1.0/7.0; 
+      vec3  ns = n_ * D.wyz - D.xzx;
+      vec4 j = p - 49.0 * floor(p * ns.z *ns.z);  
+      vec4 x_ = floor(j * ns.z);
+      vec4 y_ = floor(j - 7.0 * x_ );    
+      vec4 x = x_ *ns.x + ns.yyyy;
+      vec4 y = y_ *ns.x + ns.yyyy;
+      vec4 h = 1.0 - abs(x) - abs(y);
+      vec4 b0 = vec4( x.xy, y.xy );
+      vec4 b1 = vec4( x.zw, y.zw );
+      vec4 s0 = floor(b0)*2.0 + 1.0;
+      vec4 s1 = floor(b1)*2.0 + 1.0;
+      vec4 sh = -step(h, vec4(0.0));
+      vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+      vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+      vec3 p0 = vec3(a0.xy,h.x);
+      vec3 p1 = vec3(a0.zw,h.y);
+      vec3 p2 = vec3(a1.xy,h.z);
+      vec3 p3 = vec3(a1.zw,h.w);
+      vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+      p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+      vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+      m = m * m;
+      return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
     }
 
     void main() {
       vec2 uv = vUv;
 
-      // 1. Fluid Distortion
+      // 1. Fluid Distortion (Mouse Interaction)
       vec4 fluid = texture2D(tCursorEffect, uv);
       vec2 velocity = fluid.xy; 
       float velMag = length(velocity);
-      vec2 displacedUV = uv - velocity * uDistortIntensity;
+      
+      // 2. DOMAIN WARPING (The "Multi-Focal" Look)
+      // We don't use a center. We warp the space itself.
+      
+      
+      vec2 st = uv * 0.6; // [TUNED] Smaller features (Zoomed out)
+      // Correct aspect ratio for the noise field so circles aren't stretched
+      st.x *= uAspect;
 
-      // 2. High-Precision Forward Difference Gradient
-      // We calculate physically correct derivatives by sampling neighbors.
-      // This bypasses fwidth() which can be unstable on noise fields.
+      // First layer of warping (The "Flow")
+      vec2 q = vec2(0.);
+      float time = uTime * 0.015; // Slow breathing
       
-      vec2 pixelStep = 1.0 / uResolution; 
-      
-      float n_center = texture2D(tBackgroundNoise, displacedUV).r;
-      float n_right  = texture2D(tBackgroundNoise, displacedUV + vec2(pixelStep.x, 0.0)).r;
-      float n_up     = texture2D(tBackgroundNoise, displacedUV + vec2(0.0, pixelStep.y)).r;
-      
-      // Calculate change per pixel
-      float dndx = n_right - n_center;
-      float dndy = n_up - n_center;
-      
-      // Topology Scaling (v = n * uDetail)
-      float v = n_center * uDetail;
-      
-      // Gradient Magnitude (Change of v per pixel)
-      float gradLen = length(vec2(dndx, dndy)) * uDetail;
-      float safeGrad = max(gradLen, 0.00001);
+      q.x = snoise(vec3(st + vec2(0.0, 0.0), time));
+      q.y = snoise(vec3(st + vec2(5.2, 1.3), time));
 
-      // 3. Signed Pixel Distance
-      // Distance from the 0.5 threshold, in units of Pixels.
-      // fract(v) wraps 0..1. Center is 0.5.
-      float distVal = fract(v) - 0.5;
-      float signedPixelDist = distVal / safeGrad;
+      // Inject Mouse Velocity into the warp
+      q += velocity * uDistortIntensity * 5.0;
 
-      // 4. Smooth Fill Mask
-      // AA the fill edge at 0.0 distance
-      float fillMask = smoothstep(-0.5, 0.5, signedPixelDist);
+      // Second layer (The "Terrain")
+      // We use the warped 'q' to sample the next noise
+      vec2 r = st + q * 0.5;
+      float field = snoise(vec3(r, time * 0.5));
 
-      // 5. Uniform Stroke Mask (Width = uStrokeWidth pixels)
-      // We accept a pixel distance of +/- halfWidth
-      float halfWidth = uStrokeWidth * 0.5;
-      
-      // Use a wider smoothstep window (1.5px) for softer, cleaner AA
-      float strokeAlpha = 1.0 - smoothstep(halfWidth - 0.5, halfWidth + 1.0, abs(signedPixelDist));
+      // Normalize field roughly to 0..1 for easier ring math
+      field = field * 0.5 + 0.5;
 
-      // 6. Compose Colors
+      // 3. ISOLINES (Topographic Rings)
+      // The 'field' is now a complex terrain with islands and valleys
+      // uDetail determines how many "elevation lines" we draw
+      float topographic = fract(field * uDetail); 
+
+      // 4. SMART LINE GENERATOR (Anti-Aliased & Sharp)
+      // Use the same scale factor as fract() above
+      float delta = fwidth(field * uDetail);
+      // Tighter smoothstep for "wireframe" look (1.5 * delta for clean feel)
+      float line = smoothstep(delta * 1.5, 0.0, topographic) + smoothstep(1.0 - delta * 1.5, 1.0, topographic);
+
+      // 5. COLORS
       vec3 currentBg = mix(COLOR_BG_LIGHT, COLOR_BG_DARK, uReveal);
       vec3 currentFill = mix(COLOR_GEL_FILL, COLOR_GEL_FILL_DARK, uReveal);
       vec3 currentStroke = mix(COLOR_GEL_STROKE, COLOR_GEL_FILL_DARK, uReveal);
 
-      vec3 finalColor = mix(currentBg, currentFill, fillMask);
-      finalColor = mix(finalColor, currentStroke, strokeAlpha);
-
-      // 7. Hotspot
-      float hotspotMask = smoothstep(0.01, 0.4, velMag);
-      finalColor = mix(finalColor, COLOR_CURSOR_FOREGROUND, hotspotMask * uCursorIntensity);
+      // Body Area (The Gel) - Use the height field for the mask
+      float bodyMask = smoothstep(0.4, 0.8, field); // Smoother, wider gradient for fill
+      vec3 finalColor = mix(currentBg, currentFill, bodyMask);
+      
+      // Overlay Topographic Lines
+      // [TUNED] 50% Opacity (Exact Match Balance)
+      finalColor = mix(finalColor, currentStroke, clamp(line, 0.0, 1.0) * 0.5);
+      // Hotspot Highlight
+      float hotspot = smoothstep(0.01, 0.4, velMag);
+      finalColor = mix(finalColor, COLOR_CURSOR_FOREGROUND, hotspot * uCursorIntensity * 0.5);
 
       gl_FragColor = vec4(finalColor, 1.0);
       #include <colorspace_fragment>
