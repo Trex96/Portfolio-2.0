@@ -1,342 +1,308 @@
 'use client';
 
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import * as THREE from 'three';
-import { Canvas, useFrame, useThree, extend, ThreeElement } from '@react-three/fiber';
-import { shaderMaterial } from '@react-three/drei';
+import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
 
 /**
- * Multi-Chain Liquid Wave Shader
- * Recreates the 'Whale' silhouette using 3 independent history chains (Top V, Bot V, Tail V).
- * Delivers extreme liquid whiplash and snaking S-curve behavior.
+ * Lando Official "Whale" Cursor
+ * 
+ * Standalone GPGPU Fluid Simulation.
+ * Optimized for TypeScript and React.
+ * 
+ * Logic flow:
+ * 1. Splat (User interaction)
+ * 2. Advection (Fluid movement/Dissipation)
+ * 3. Divergence -> Pressure (Solves incompressibility)
+ * 4. Gradient Subtraction
+ * 5. Final Threshold Pass (The "Whale" silhouette)
  */
-const BlobMaterial = shaderMaterial(
-    {
-        uHead: new THREE.Vector2(0, 0),
-        uTopChain: new Array(5).fill(new THREE.Vector2(0, 0)),
-        uBotChain: new Array(5).fill(new THREE.Vector2(0, 0)),
-        uTailChain: new Array(8).fill(new THREE.Vector2(0, 0)),
-        uTime: 0,
-        uAspect: 1,
-        uColor: new THREE.Color('#5cafc1'),
-        uSpeed: 0,
-        uVelocity: new THREE.Vector2(0, 0),
-    },
-    // Vertex Shader
-    `
+
+// Shaders
+const baseVertex = `
     varying vec2 vUv;
     void main() {
         vUv = uv;
         gl_Position = vec4(position, 1.0);
     }
-    `,
-    // Fragment Shader
-    `
-    uniform vec2 uHead;
-    uniform vec2 uTopChain[5];
-    uniform vec2 uBotChain[5];
-    uniform vec2 uTailChain[8];
-    uniform float uTime;
-    uniform float uAspect;
-    uniform vec3 uColor;
-    uniform float uSpeed;
-    uniform vec2 uVelocity;
+`;
+
+const splatFrag = `
+    precision highp float;
     varying vec2 vUv;
-
-    vec2 rotate(vec2 v, float a) {
-        float s = sin(a);
-        float c = cos(a);
-        return mat2(c, -s, s, c) * v;
-    }
-
-    float smin(float a, float b, float k) {
-        float h = max(k - abs(a - b), 0.0) / k;
-        return min(a, b) - h * h * h * k * (1.0 / 6.0);
-    }
-
-    float sdSegment(vec2 p, vec2 a, vec2 b) {
-        vec2 pa = p - a, ba = b - a;
-        float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-        return length(pa - ba * h);
-    }
-
-    float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
-        vec2 e0 = p1 - p0;
-        vec2 e1 = p2 - p1;
-        vec2 e2 = p0 - p2;
-
-        vec2 v0 = p - p0;
-        vec2 v1 = p - p1;
-        vec2 v2 = p - p2;
-
-        vec2 pq0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0);
-        vec2 pq1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0);
-        vec2 pq2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);
-
-        float s = sign(e0.x * e2.y - e0.y * e2.x);
-        vec2 d = min(min(vec2(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
-                         vec2(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
-                     vec2(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
-
-        return -sqrt(d.x) * sign(d.y);
-    }
-
-    float getInitialPosition(vec2 uv, float aspect) {
-        return 1e10;
-    }
-
-    float getHead(float d, vec2 uv, vec2 pHead, float speed, vec2 velocity) {
-        vec2 p = uv - pHead;
-
-        // 1. Calculate Rotation Angle
-        float angle = atan(velocity.y, velocity.x);
-
-        // 2. Rotate to align Local +X (Front) with Velocity Angle
-        // Our 'rotate' function implements inverse rotation (by -angle).
-        // Calling it with 'angle' rotates SPACE by -angle.
-        // Rotating SPACE by -angle rotates OBJECT by +angle.
-        p = rotate(p, angle);
-
-        // 3. Define Shape in Local Space (Facing RIGHT / +X)
-        
-        // Base Circle (Stationary)
-        float dCircle = length(p) - 0.05;
-        
-        // D-Shaped Head (Moving) - Smooth, rounded dome
-        // Use a simple oval for a bulbous, non-pointed front
-        float dOval = length(p / vec2(1.2, 0.9)) - 0.05; 
-        
-        // Side Shoulder Bumps
-        // Positioned on the "shoulders" of the streamlined body
-        
-        // Top Shoulder
-        vec2 f1_base = vec2(-0.03, 0.05); 
-        vec2 f1_tip  = vec2(-0.08, 0.08); 
-        vec2 f1_out  = vec2(-0.05, 0.06); 
-        float dFin1 = sdTriangle(p, f1_base, f1_tip, f1_out);
-
-        // Bot Shoulder
-        vec2 f2_base = vec2(-0.03, -0.05); 
-        vec2 f2_tip  = vec2(-0.08, -0.08); 
-        vec2 f2_out  = vec2(-0.05, -0.06); 
-        float dFin2 = sdTriangle(p, f2_base, f2_tip, f2_out);
-
-        float dFins = min(dFin1, dFin2);
-        
-        // 4. Blend and Morph
-        float circleToOval = smoothstep(0.0, 0.4, speed);
-        float ovalToHead = smoothstep(0.2, 0.8, speed);
-        
-        // Define final streamlined shape 
-        float dWhale = smin(dOval, dFins, 0.4);
-
-         // Construct Head:
-        float dBase = mix(dCircle, dOval, circleToOval);
-        float dHead = mix(dBase, dWhale, 0.3 + 0.7 * ovalToHead);
-
-        return smin(d, dHead, 0.4);
-    }
-
-    float getBody(float d, vec2 uv, float speed, float aspect, vec2 top[5], vec2 bot[5]) {
-        float res = d;
-        // 2. TOP V-CHAIN (Liquid shoulder fin)
-        for(int i=0; i<4; i++) {
-            vec2 pA = top[i]; pA.x *= aspect;
-            vec2 pB = top[i+1]; pB.x *= aspect;
-            float r = 0.025 * (1.0 - float(i)/5.0) * (0.4 + 0.6 * clamp(speed * 5.0, 0.0, 1.0));
-            res = smin(res, sdSegment(uv, pA, pB) - r, 0.35);
-        }
-
-        // 3. BOTTOM V-CHAIN (Liquid shoulder fin - heavier)
-        for(int i=0; i<4; i++) {
-            vec2 pA = bot[i]; pA.x *= aspect;
-            vec2 pB = bot[i+1]; pB.x *= aspect;
-            float r = 0.035 * (1.0 - float(i)/5.0) * (0.4 + 0.6 * clamp(speed * 5.0, 0.0, 1.0));
-            res = smin(res, sdSegment(uv, pA, pB) - r, 0.35);
-        }
-        return res;
-    }
-
-    float getTail(float d, vec2 uv, float speed, float aspect, vec2 tail[8]) {
-        float res = d;
-        // 4. CENTRAL TAIL CHAIN (The spine)
-        for(int i=0; i<7; i++) {
-            vec2 pA = tail[i]; pA.x *= aspect;
-            vec2 pB = tail[i+1]; pB.x *= aspect;
-            float r = 0.03 * (1.0 - float(i)/8.0) * (0.4 + 0.6 * clamp(speed * 5.0, 0.0, 1.0));
-            res = smin(res, sdSegment(uv, pA, pB) - r, 0.45);
-        }
-        return res;
-    }
+    uniform sampler2D uTarget;
+    uniform vec2 uPoint;
+    uniform vec2 uForce;
+    uniform float uRadius;
+    uniform float uAspect;
 
     void main() {
-        vec2 uv = vUv;
-        uv.x *= uAspect;
-        vec2 pHead = uHead; pHead.x *= uAspect;
-
-        float d = getInitialPosition(uv, uAspect);
-        d = getHead(d, uv, pHead, uSpeed, uVelocity);
-        d = getBody(d, uv, uSpeed, uAspect, uTopChain, uBotChain);
-        d = getTail(d, uv, uSpeed, uAspect, uTailChain);
-
-        // Active Liquid Organic Wobble
-        float wobble = sin(uTime * 3.0 + vUv.x * 15.0) * cos(uTime * 2.5 + vUv.y * 15.0) * 0.005;
-        d += wobble * smoothstep(0.0, 0.3, length(uv-pHead));
-
-        float alpha = smoothstep(0.005, -0.005, d);
-        if (alpha < 0.01) discard;
-        gl_FragColor = vec4(uColor, alpha);
+        vec2 p = vUv - uPoint;
+        p.x *= uAspect;
+        float d = exp(-dot(p, p) / uRadius);
+        vec2 base = texture2D(uTarget, vUv).xy;
+        gl_FragColor = vec4(base + uForce * d, 0.0, 1.0);
     }
-    `
-);
+`;
 
-extend({ BlobMaterial });
+const advectionFrag = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform float uDt;
+    uniform float uDissipation;
 
-function BlobScene({ fillColor }: { fillColor: string }) {
-    const materialRef = useRef<any>(null);
-    const { size } = useThree();
+    void main() {
+        vec2 vel = texture2D(uVelocity, vUv).xy;
+        vec2 coord = vUv - uDt * vel;
+        vec2 advected = texture2D(uVelocity, coord).xy;
+        gl_FragColor = vec4(advected * uDissipation, 0.0, 1.0);
+    }
+`;
 
-    // History Chains for extreme liquid behavior
-    const head = useRef(new THREE.Vector2(0.5, 0.5));
-    const topChain = useMemo(() => new Array(5).fill(0).map(() => new THREE.Vector2(0.5, 0.5)), []);
-    const botChain = useMemo(() => new Array(5).fill(0).map(() => new THREE.Vector2(0.5, 0.5)), []);
-    const tailChain = useMemo(() => new Array(8).fill(0).map(() => new THREE.Vector2(0.5, 0.5)), []);
+const divergenceFrag = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexelSize;
 
-    const [prevMouse] = useState(() => new THREE.Vector2(0.5, 0.5));
-    const [vel] = useState(() => new THREE.Vector2(0, 0));
+    void main() {
+        float L = texture2D(uVelocity, vUv - vec2(uTexelSize.x, 0.0)).x;
+        float R = texture2D(uVelocity, vUv + vec2(uTexelSize.x, 0.0)).x;
+        float T = texture2D(uVelocity, vUv + vec2(0.0, uTexelSize.y)).y;
+        float B = texture2D(uVelocity, vUv - vec2(0.0, uTexelSize.y)).y;
+        float div = 0.5 * (R - L + T - B);
+        gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
+    }
+`;
 
-    const updateInitialPosition = (state: any) => {
-        const mouse = state.pointer;
-        const tx = mouse.x * 0.5 + 0.5;
-        const ty = mouse.y * 0.5 + 0.5;
-        const target = new THREE.Vector2(tx, ty);
+const pressureFrag = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uPressure;
+    uniform sampler2D uDivergence;
+    uniform vec2 uTexelSize;
 
-        vel.subVectors(target, prevMouse);
-        prevMouse.copy(target);
+    void main() {
+        float L = texture2D(uPressure, vUv - vec2(uTexelSize.x, 0.0)).x;
+        float R = texture2D(uPressure, vUv + vec2(uTexelSize.x, 0.0)).x;
+        float T = texture2D(uPressure, vUv + vec2(0.0, uTexelSize.y)).x;
+        float B = texture2D(uPressure, vUv - vec2(0.0, uTexelSize.y)).x;
+        float div = texture2D(uDivergence, vUv).x;
+        float p = (L + R + B + T - div) * 0.25;
+        gl_FragColor = vec4(p, 0.0, 0.0, 1.0);
+    }
+`;
 
-        const moveAngle = Math.atan2(vel.y, vel.x);
-        const speed = Math.min(vel.length() * 60, 1.0);
-        const isIdle = speed < 0.01;
+const gradientSubtractFrag = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uPressure;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexelSize;
 
-        return { target, moveAngle, speed, isIdle };
+    void main() {
+        float L = texture2D(uPressure, vUv - vec2(uTexelSize.x, 0.0)).x;
+        float R = texture2D(uPressure, vUv + vec2(uTexelSize.x, 0.0)).x;
+        float T = texture2D(uPressure, vUv + vec2(0.0, uTexelSize.y)).x;
+        float B = texture2D(uPressure, vUv - vec2(0.0, uTexelSize.y)).x;
+        vec2 vel = texture2D(uVelocity, vUv).xy;
+        vel -= 0.5 * vec2(R - L, T - B);
+        gl_FragColor = vec4(vel, 0.0, 1.0);
+    }
+`;
+
+const whaleFrag = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform vec3 uColor;
+    uniform float uThreshold;
+
+    void main() {
+        vec2 vel = texture2D(uVelocity, vUv).xy;
+        float intensity = length(vel);
+        
+        // The signature "Whale" thresholding
+        // Site uses inverted color logic, but we can simplify to direct length mapping
+        float alpha = step(uThreshold, intensity);
+        
+        if(alpha < 0.1) discard;
+        gl_FragColor = vec4(uColor, 1.0);
+    }
+`;
+
+function WhaleSim({ fillColor }: { fillColor: string }) {
+    const { gl, size } = useThree();
+    const simRes = 128; // Standard organic resolution
+
+    // FBO Setup
+    const fboProps = {
+        type: THREE.HalfFloatType,
+        format: THREE.RGBAFormat,
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        depthBuffer: false,
+        stencilBuffer: false,
     };
 
-    const currentVel = useRef(new THREE.Vector2(0, 0));
-    const currentSpeed = useRef(0);
-    const idleFrames = useRef(0);
-    const stableAngle = useRef(0);
-
-    const updateHead = (target: THREE.Vector2) => {
-        head.current.lerp(target, 0.3);
-    };
-
-    const updateBody = (moveAngle: number, speed: number, isIdle: boolean) => {
-        // Update Chains with S-Curve Whiplash
-        const updateChain = (chain: THREE.Vector2[], angleOffset: number, length: number, lags: number[]) => {
-            if (isIdle) {
-                // At rest, trail behind based on last known movement direction
-                const idleTarget = new THREE.Vector2(
-                    head.current.x + Math.cos(moveAngle + Math.PI + angleOffset) * length,
-                    head.current.y + Math.sin(moveAngle + Math.PI + angleOffset) * length
-                );
-                chain[0].lerp(idleTarget, 0.1);
-            } else {
-                const firstTarget = new THREE.Vector2(
-                    head.current.x + Math.cos(moveAngle + Math.PI + angleOffset) * ((length * 0.4) * speed),
-                    head.current.y + Math.sin(moveAngle + Math.PI + angleOffset) * ((length * 0.4) * speed)
-                );
-                chain[0].lerp(firstTarget, 0.35);
-            }
-
-            for (let i = 1; i < chain.length; i++) {
-                const lag = lags[i - 1] ?? 0.2;
-                chain[i].lerp(chain[i - 1], lag);
-            }
+    const targets = useMemo(() => {
+        const createRT = () => new THREE.WebGLRenderTarget(simRes, simRes, fboProps);
+        return {
+            vel0: createRT(),
+            vel1: createRT(),
+            pressure0: createRT(),
+            pressure1: createRT(),
+            divergence: createRT(),
         };
+    }, []);
 
-        const bodyLags = [0.2, 0.2, 0.25, 0.25];
-        updateChain(topChain, -0.6, 0.04, bodyLags);
-        updateChain(botChain, 0.7, 0.05, bodyLags);
-        return updateChain;
-    };
+    // Scene for FBO passes
+    const { scene, camera, quad } = useMemo(() => {
+        const s = new THREE.Scene();
+        const c = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+        s.add(q);
+        return { scene: s, camera: c, quad: q };
+    }, []);
 
-    const updateTail = (updateChain: any, moveAngle: number, speed: number, isIdle: boolean) => {
-        const tailLags = [0.25, 0.3, 0.3, 0.35, 0.35, 0.4, 0.4, 0.45];
-        updateChain(tailChain, 0.0, 0.10, tailLags); // Central Tail
-    };
+    // Interaction state
+    const lastMouse = useRef(new THREE.Vector2(0, 0));
+    const isFirstFrame = useRef(true);
+
+    // Materials
+    const mats = useMemo(() => {
+        const createMat = (frag: string, uniforms = {}) => new THREE.ShaderMaterial({
+            vertexShader: baseVertex,
+            fragmentShader: frag,
+            uniforms: {
+                uTexelSize: { value: new THREE.Vector2(1 / simRes, 1 / simRes) },
+                uDt: { value: 0.016 },
+                ...uniforms
+            },
+            depthTest: false,
+            depthWrite: false,
+        });
+
+        return {
+            splat: createMat(splatFrag, {
+                uTarget: { value: null },
+                uPoint: { value: new THREE.Vector2() },
+                uForce: { value: new THREE.Vector2() },
+                uRadius: { value: 0.0005 },
+                uAspect: { value: 1.0 }
+            }),
+            advection: createMat(advectionFrag, {
+                uVelocity: { value: null },
+                uDissipation: { value: 0.96 }
+            }),
+            divergence: createMat(divergenceFrag, { uVelocity: { value: null } }),
+            pressure: createMat(pressureFrag, { uPressure: { value: null }, uDivergence: { value: null } }),
+            gradient: createMat(gradientSubtractFrag, { uPressure: { value: null }, uVelocity: { value: null } }),
+            output: new THREE.ShaderMaterial({
+                vertexShader: baseVertex,
+                fragmentShader: whaleFrag,
+                uniforms: {
+                    uVelocity: { value: null },
+                    uColor: { value: new THREE.Color(fillColor) },
+                    uThreshold: { value: 0.05 }
+                },
+                transparent: true
+            })
+        };
+    }, [fillColor]);
 
     useFrame((state) => {
-        const { target, moveAngle, speed, isIdle } = updateInitialPosition(state);
+        const mouse = state.pointer;
+        const currentMouse = new THREE.Vector2((mouse.x + 1) / 2, (mouse.y + 1) / 2);
 
-        // Smooth velocity for rotation
-        // Reconstruct velocity vector from speed and angle, OR just lerp the computed vel
-        // But we computed 'vel' inside updateInitialPosition, let's just use speed/angle to make a vector
-        const targetVel = new THREE.Vector2(Math.cos(moveAngle), Math.sin(moveAngle));
-        // Only update if moving to avoid spinning at rest
-        if (speed > 0.01) {
-            currentVel.current.lerp(targetVel.multiplyScalar(speed), 0.1);
-            // Actually we just need direction, but let's keep it simple. 
-            // We can just lerp angle vector.
-            // Better:
+        if (isFirstFrame.current) {
+            lastMouse.current.copy(currentMouse);
+            isFirstFrame.current = false;
         }
 
-        // Simpler: Just lerp the unit vector derived from moveAngle
-        const dir = new THREE.Vector2(Math.cos(moveAngle), Math.sin(moveAngle));
-        if (speed > 0.01) {
-            currentVel.current.lerp(dir, 0.15);
+        const force = new THREE.Vector2().subVectors(currentMouse, lastMouse.current).multiplyScalar(50.0);
+        lastMouse.current.copy(currentMouse);
+
+        // 1. Splat
+        if (force.lengthSq() > 0.0) {
+            mats.splat.uniforms.uTarget.value = targets.vel0.texture;
+            mats.splat.uniforms.uPoint.value.copy(currentMouse);
+            mats.splat.uniforms.uForce.value.copy(force);
+            mats.splat.uniforms.uAspect.value = size.width / size.height;
+            gl.setRenderTarget(targets.vel1);
+            quad.material = mats.splat;
+            gl.render(scene, camera);
+
+            // Swap
+            const temp = targets.vel0;
+            targets.vel0 = targets.vel1;
+            targets.vel1 = temp;
         }
 
-        // Idle detection: wait 30 frames before settling
-        if (speed < 0.01) {
-            idleFrames.current++;
-        } else {
-            idleFrames.current = 0;
-            // Update stable angle only when moving
-            stableAngle.current = THREE.MathUtils.lerp(stableAngle.current, moveAngle, 0.15);
+        // 2. Advection
+        mats.advection.uniforms.uVelocity.value = targets.vel0.texture;
+        gl.setRenderTarget(targets.vel1);
+        quad.material = mats.advection;
+        gl.render(scene, camera);
+
+        const tempAd = targets.vel0;
+        targets.vel0 = targets.vel1;
+        targets.vel1 = tempAd;
+
+        // 3. Divergence
+        mats.divergence.uniforms.uVelocity.value = targets.vel0.texture;
+        gl.setRenderTarget(targets.divergence);
+        quad.material = mats.divergence;
+        gl.render(scene, camera);
+
+        // 4. Pressure (Jacobi iterations per site logic)
+        gl.setRenderTarget(targets.pressure0);
+        gl.clear();
+        for (let i = 0; i < 4; i++) {
+            mats.pressure.uniforms.uDivergence.value = targets.divergence.texture;
+            mats.pressure.uniforms.uPressure.value = targets.pressure0.texture;
+            gl.setRenderTarget(targets.pressure1);
+            quad.material = mats.pressure;
+            gl.render(scene, camera);
+
+            const tempP = targets.pressure0;
+            targets.pressure0 = targets.pressure1;
+            targets.pressure1 = tempP;
         }
-        const actualIsIdle = idleFrames.current > 30;
 
-        updateHead(target);
+        // 5. Gradient Subtract
+        mats.gradient.uniforms.uPressure.value = targets.pressure0.texture;
+        mats.gradient.uniforms.uVelocity.value = targets.vel0.texture;
+        gl.setRenderTarget(targets.vel1);
+        quad.material = mats.gradient;
+        gl.render(scene, camera);
 
-        // Use stableAngle for resting tail direction
-        const currentAngle = actualIsIdle ? stableAngle.current : moveAngle;
-        const updateChainFunc = updateBody(currentAngle, speed, actualIsIdle);
-        updateTail(updateChainFunc, currentAngle, speed, actualIsIdle);
+        const tempG = targets.vel0;
+        targets.vel0 = targets.vel1;
+        targets.vel1 = tempG;
 
-        if (materialRef.current) {
-            materialRef.current.uTime = state.clock.elapsedTime;
-            materialRef.current.uSpeed = currentSpeed.current;
-            materialRef.current.uVelocity = currentVel.current;
-            materialRef.current.uHead.copy(head.current);
-            materialRef.current.uTopChain = topChain;
-            materialRef.current.uBotChain = botChain;
-            materialRef.current.uTailChain = tailChain;
-            materialRef.current.uAspect = size.width / size.height;
-        }
+        // 6. Rendering output
+        mats.output.uniforms.uVelocity.value = targets.vel0.texture;
+        gl.setRenderTarget(null);
     });
 
     return (
         <mesh>
             <planeGeometry args={[2, 2]} />
-            {/* @ts-ignore */}
-            <blobMaterial
-                ref={materialRef}
-                transparent={true}
-                uColor={new THREE.Color(fillColor)}
-                blending={THREE.NormalBlending}
-            />
+            <primitive object={mats.output} />
         </mesh>
     );
 }
 
-export default function GooCursor({
-    fillColor = '#5cafc1',
+export default function LandoCursor({
+    fillColor = '#EFEFE5',
     zIndex = 99,
     blendMode = 'exclusion',
 }) {
     return (
         <div
-            className="cursor-shader-wrap"
+            className="lando-cursor-fluid-wrap"
             style={{
                 position: 'fixed',
                 top: 0,
@@ -349,19 +315,12 @@ export default function GooCursor({
             }}
         >
             <Canvas
-                shadows={false}
                 camera={{ position: [0, 0, 1] }}
-                gl={{ alpha: true, antialias: true, stencil: false, depth: false }}
+                gl={{ alpha: true, antialias: true }}
                 style={{ background: 'transparent' }}
             >
-                <BlobScene fillColor={fillColor} />
+                <WhaleSim fillColor={fillColor} />
             </Canvas>
         </div>
     );
-}
-
-declare module '@react-three/fiber' {
-    interface ThreeElements {
-        blobMaterial: ThreeElement<typeof BlobMaterial>
-    }
 }

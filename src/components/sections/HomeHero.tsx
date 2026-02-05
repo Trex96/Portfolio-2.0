@@ -89,7 +89,8 @@ export function HomeHero() {
     return (
         <section ref={containerRef} className="s home-hero" data-hero-animation-container="" style={{ cursor: 'none', minHeight: '100vh' }}>
             <div className="c home-hero">
-// BlobCursor removed from here
+                {/* Blob Cursor - Restored for cursor-following visibility */}
+                <BlobCursor fillColor="#EFEFE5" zIndex={20} />
 
                 {/* WebGL Canvas - Absolute Overlay */}
                 <div className="gl-canvas" data-gl="head" data-sticky-hero="canvas" style={{ zIndex: 1 }}>
