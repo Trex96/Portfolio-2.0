@@ -5,15 +5,15 @@ import Image from 'next/image';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
-import { Scene } from '../3d/Scene';
-import { GLBackground } from '../3d/GLBackground';
-import { GLForeground } from '../3d/GLForeground';
-import { CircuitIcon } from '../ui/CircuitIcon';
-import { HelmetIcon } from '../ui/HelmetIcon';
+import { Scene } from '../webgl/core/Scene';
+import { GLBackground } from '../webgl/background/GLBackground';
+import { GLForeground } from '../webgl/foreground/GLForeground';
+import { CircuitIcon } from '../common/icons/CircuitIcon';
+import { HelmetIcon } from '../common/icons/HelmetIcon';
 import { useSplitText } from '@/hooks/useSplitText';
-import BlobCursor from '../3d/blob';
+import BlobCursor from '../webgl/cursor/BlobCursor';
 
-
+gsap.registerPlugin(useGSAP, ScrollTrigger);
 
 export function HomeHero() {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -26,8 +26,6 @@ export function HomeHero() {
 
     // Touch controls state
     const [isScrollLocked, setIsScrollLocked] = useState(false);
-
-    gsap.registerPlugin(useGSAP, ScrollTrigger);
 
     useGSAP(() => {
         // Initialize landoGL global for shaders
@@ -87,10 +85,10 @@ export function HomeHero() {
     };
 
     return (
-        <section ref={containerRef} className="s home-hero" data-hero-animation-container="" style={{ cursor: 'none', minHeight: '100vh' }}>
+        <section ref={containerRef} className="s home-hero" data-hero-animation-container="" style={{ cursor: 'none', minHeight: '100vh', position: 'relative' }}>
             <div className="c home-hero">
-                {/* Blob Cursor - Restored for cursor-following visibility */}
-                <BlobCursor fillColor="#EFEFE5" zIndex={20} />
+                {/* Blob Cursor - Properly Scoped to Hero using Absolute Positioning */}
+                <BlobCursor fillColor="#A0A0A0" zIndex={20} />
 
                 {/* WebGL Canvas - Absolute Overlay */}
                 <div className="gl-canvas" data-gl="head" data-sticky-hero="canvas" style={{ zIndex: 1 }}>

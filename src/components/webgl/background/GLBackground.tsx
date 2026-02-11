@@ -4,8 +4,8 @@ import { useRef, useMemo, useState, useEffect } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree, createPortal } from '@react-three/fiber';
 import { FluidSimulation } from './FluidSimulation';
-import { BackgroundMaterial } from './shaders/BackgroundMaterial';
-import { SimplexNoiseMaterial } from './shaders/SimplexNoiseMaterial';
+import { BackgroundMaterial } from './BackgroundMaterial';
+import { SimplexNoiseMaterial } from '../shared/SimplexNoiseMaterial';
 import { extend } from '@react-three/fiber';
 
 extend({ BackgroundMaterial, SimplexNoiseMaterial });

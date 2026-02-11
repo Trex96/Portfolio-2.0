@@ -22,13 +22,13 @@ export const BackgroundMaterial = shaderMaterial(
 
     // Colors - Tuned for Lando 100% Match (Exact Vis)
     COLOR_BG_LIGHT: new THREE.Color('#F4F4ED'), // Lando "White" (Warm Cream)
-    COLOR_GEL_FILL: new THREE.Color('#EFEFE5'), // Lando "Cream" (Greenish Tint)
-    COLOR_GEL_STROKE: new THREE.Color('#BABDAA'), // Dark Olive for contrast
-    COLOR_CURSOR_FOREGROUND: new THREE.Color('#CFD2C5'),
+    COLOR_GEL_FILL: new THREE.Color('#D4D7CA'), // Lando "Cream" (Greenish Tint)
+    COLOR_GEL_STROKE: new THREE.Color('#CBCBB9'), // Dark Olive for contrast
+    COLOR_CURSOR_FOREGROUND: new THREE.Color('#bbbcb6'),
 
     // Scrolled (Scroll > 0)
     COLOR_BG_DARK: new THREE.Color('#282C20'),
-    COLOR_GEL_FILL_DARK: new THREE.Color('#1A1D18'),
+    COLOR_GEL_FILL_DARK: new THREE.Color('#363B25'),
 
     // Logic
     uStrokeWidth: 2.0,

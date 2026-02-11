@@ -4,7 +4,7 @@ import { useTexture } from '@react-three/drei'
 import { useRef, useMemo, useState, useEffect } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
-import { HeadMaterial } from './shaders/HeadMaterial'
+import { HeadMaterial } from './HeadMaterial'
 import { extend } from '@react-three/fiber'
 extend({ HeadMaterial })
 
