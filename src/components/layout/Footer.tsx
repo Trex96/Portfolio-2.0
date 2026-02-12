@@ -7,11 +7,11 @@ export function Footer() {
             <div
                 className="absolute top-0 left-0 right-0 h-32 bg-ln-dark-green"
                 style={{
-                    maskImage: 'url(/cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/67d2dd47cfe84bed1dce9542_ln4-footer-mask-desktop.svg)',
+                    maskImage: 'url(/helmet/textures/ui/ln4-footer-mask-desktop.svg)',
                     maskSize: 'cover',
                     maskPosition: 'center',
                     maskRepeat: 'no-repeat',
-                    WebkitMaskImage: 'url(/cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/67d2dd47cfe84bed1dce9542_ln4-footer-mask-desktop.svg)',
+                    WebkitMaskImage: 'url(/helmet/textures/ui/ln4-footer-mask-desktop.svg)',
                     WebkitMaskSize: 'cover',
                     WebkitMaskPosition: 'center',
                     WebkitMaskRepeat: 'no-repeat',

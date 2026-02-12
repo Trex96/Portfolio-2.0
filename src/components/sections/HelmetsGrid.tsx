@@ -3,10 +3,10 @@
 import Image from 'next/image';
 
 const HELMETS = [
-    { name: 'Season', year: '2025', image: '/cdn.prod.website-files.com/67d97a68478fe87e30c67abe/68305b3e6c7ab86033cf172c_In-helm-2025-Season-base.webp' },
-    { name: 'Discoball', year: '2025', image: '/cdn.prod.website-files.com/67d97a68478fe87e30c67abe/68305b2259159e5170d2b923_In-helm-2025-Discoball-base.webp' },
-    { name: 'Porcelain', year: '2024', image: '/cdn.prod.website-files.com/67d97a68478fe87e30c67abe/68305acf3fccf71c6d72607b_In-helm-2024-Porcelain-base.webp' },
-    { name: 'Japan', year: '2024', image: '/cdn.prod.website-files.com/67d97a68478fe87e30c67abe/68305a980c399022066600a6_In-helm-2024-Japan-base.webp' },
+    { name: 'Season', year: '2025', image: '/helmet/textures/ui/In-helm-2025-Season-base.webp' },
+    { name: 'Discoball', year: '2025', image: '/helmet/textures/ui/In-helm-2025-Discoball-base.webp' },
+    { name: 'Porcelain', year: '2024', image: '/helmet/textures/ui/In-helm-2024-Porcelain-base.webp' },
+    { name: 'Japan', year: '2024', image: '/helmet/textures/ui/In-helm-2024-Japan-base.webp' },
 ];
 
 export function HelmetsGrid() {

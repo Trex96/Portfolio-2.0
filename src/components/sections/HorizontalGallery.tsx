@@ -4,10 +4,10 @@ import { useRef } from 'react';
 import Image from 'next/image';
 
 const GALLERY_ITEMS = [
-    { id: 1, title: 'Qatar, 2024', image: '/cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/68302baa04b14a1ca33c0b25_ln-home-horiz-1.webp' },
-    { id: 2, title: 'FIA Prize Giving, 2024', image: '/cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/68302baab12220595c8223b3_ln-home-horiz-2.webp' },
-    { id: 3, title: 'Miami GP, 2024', image: '/cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/68302babcf12f0111d96322e_ln-home-horiz-3.webp' },
-    { id: 4, title: 'Monaco, 2023', image: '/cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/68302baa798e2cc6e02ac38a_ln-home-horiz-4.webp' },
+    { id: 1, title: 'Qatar, 2024', image: '/helmet/textures/ui/ln-home-horiz-1.webp' },
+    { id: 2, title: 'FIA Prize Giving, 2024', image: '/helmet/textures/ui/ln-home-horiz-2.webp' },
+    { id: 3, title: 'Miami GP, 2024', image: '/helmet/textures/ui/ln-home-horiz-3.webp' },
+    { id: 4, title: 'Monaco, 2023', image: '/helmet/textures/ui/ln-home-horiz-4.webp' },
 ];
 
 export function HorizontalGallery() {

@@ -17,10 +17,10 @@ export function LandoHead({ reveal = 0, scrollProgress = 0, helmetHover = 0, flu
 
     // Load textures
     const [diffuse, depth, alpha, shadow] = useTexture([
-        '/lando.itsoffbrand.io/gl/textures/head/webp/diffuse.webp',
-        '/lando.itsoffbrand.io/gl/textures/head/webp/depth.webp',
-        '/lando.itsoffbrand.io/gl/textures/head/webp/alpha.webp',
-        '/lando.itsoffbrand.io/gl/textures/head/webp/shadow.webp'
+        '/helmet/textures/head/diffuse.webp',
+        '/helmet/textures/head/depth.webp',
+        '/helmet/textures/head/alpha.webp',
+        '/helmet/textures/head/shadow.webp'
     ])
 
     // --- 0. GSAP Setters ---

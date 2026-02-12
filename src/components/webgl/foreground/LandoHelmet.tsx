@@ -8,7 +8,7 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 
 export function LandoHelmet(props: any) {
-    const { nodes, materials } = useGLTF('/lando.itsoffbrand.io/gl/models/helmet-21.glb') as any;
+    const { nodes, materials } = useGLTF('/helmet/models/helmet-21.glb') as any;
     const groupRef = useRef<Group>(null);
     const { viewport } = useThree();
 
@@ -26,7 +26,7 @@ export function LandoHelmet(props: any) {
     }, [groupRef.current]);
 
     // Clone scene for material manipulation
-    const scene = (useGLTF('/lando.itsoffbrand.io/gl/models/helmet-21.glb') as any).scene.clone();
+    const scene = (useGLTF('/helmet/models/helmet-21.glb') as any).scene.clone();
 
     // Apply solid glossy material to all meshes (Matching original look)
     scene.traverse((child: any) => {
@@ -81,5 +81,5 @@ export function LandoHelmet(props: any) {
     );
 }
 
-useGLTF.preload('/lando.itsoffbrand.io/gl/models/helmet-21.glb');
+useGLTF.preload('/helmet/models/helmet-21.glb');
 

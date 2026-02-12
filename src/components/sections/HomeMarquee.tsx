@@ -14,7 +14,7 @@ export function HomeMarquee() {
                             <div className="marquee-signature-w">
                                 <div className="home-hero-logo-wrap">
                                     <Image
-                                        src="https://cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/67cecea4e9d311047dcb51e5_ln4-hw-signature2.svg"
+                                        src="/helmet/textures/ui/ln4-hw-signature2.svg"
                                         alt="Lando's signature in lime color"
                                         width={200}
                                         height={80}
@@ -23,7 +23,7 @@ export function HomeMarquee() {
                                         data-hero-anim="img"
                                     />
                                     <Image
-                                        src="https://cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/67f517cdc5bb460c3c3b8e5b_ln4-LN-logo-svg.svg"
+                                        src="/helmet/textures/ui/ln4-LN-logo-svg.svg"
                                         alt="LN Logo"
                                         width={80}
                                         height={80}

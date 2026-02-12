@@ -21,7 +21,7 @@ export function OnOffTrackSection() {
                 {/* Image Background */}
                 <div className="absolute inset-0 z-0 opacity-40 group-hover:opacity-60 transition-opacity duration-500">
                     <Image
-                        src="/cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/67d18655b032045a4dc78e53_ln4-hp-lando-helmet.webp"
+                        src="/helmet/textures/ui/ln4-hp-lando-helmet.webp"
                         alt="Lando On Track"
                         fill
                         className="object-cover"
@@ -43,7 +43,7 @@ export function OnOffTrackSection() {
                 {/* Image Background */}
                 <div className="absolute inset-0 z-0 opacity-20 group-hover:opacity-40 transition-opacity duration-500">
                     <Image
-                        src="/cdn.prod.website-files.com/67b5a02dc5d338960b17a7e9/67d18655b032045a4dc78e56_ln4-hp-lando-head.webp"
+                        src="/helmet/textures/ui/ln4-hp-lando-head.webp"
                         alt="Lando Off Track"
                         fill
                         className="object-cover"
